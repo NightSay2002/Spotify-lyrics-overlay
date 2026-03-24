@@ -11,3 +11,4 @@ dist/
 *.spec
 
 manual_translations.json
+api-enhanced/
