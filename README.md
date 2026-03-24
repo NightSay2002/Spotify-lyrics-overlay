@@ -34,7 +34,7 @@ pip install -r requirements.txt
 ### 執行
 
 ```bash
-python a.py
+python mac.py
 ```
 
 第一次啟動後，打開浮動 `設定` 視窗並填入：
@@ -134,7 +134,7 @@ pip install -r requirements.txt
 ### Run
 
 ```bash
-python a.py
+python mac.py
 ```
 
 On first launch, open the floating `設定` window and fill in:

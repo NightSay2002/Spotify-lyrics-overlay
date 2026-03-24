@@ -28,7 +28,7 @@ if [[ -f "$ROOT_DIR/manual_translations.json" ]]; then
   PYINSTALLER_ARGS+=(--add-data "$ROOT_DIR/manual_translations.json:.")
 fi
 
-"$PYTHON_BIN" -m PyInstaller "${PYINSTALLER_ARGS[@]}" "$ROOT_DIR/a.py"
+"$PYTHON_BIN" -m PyInstaller "${PYINSTALLER_ARGS[@]}" "$ROOT_DIR/mac.py"
 
 echo "Built app bundle:"
 echo "$DIST_DIR/$APP_NAME.app"
