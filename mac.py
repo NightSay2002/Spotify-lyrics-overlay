@@ -22,12 +22,14 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QColorDialog,
+    QFrame,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QVBoxLayout,
@@ -82,6 +84,7 @@ UI_STRINGS = {
         "button_save_spotify": "儲存 Spotify Key",
         "button_clear_spotify": "清除 Spotify Key",
         "button_language": "English",
+        "button_offset_reset": "重設",
         "field_text_color": "字色",
         "field_end_color": "終點色",
         "field_button_color": "按鈕色",
@@ -100,6 +103,8 @@ UI_STRINGS = {
         "field_client_id": "Client ID",
         "field_client_secret": "Client Secret",
         "field_redirect_uri": "Redirect URI",
+        "field_timing_song": "校正歌曲",
+        "field_lyric_offset": "歌詞偏移(ms)",
         "field_track_name": "歌名",
         "field_artist_name": "歌手",
         "translation_hint": "每兩行一組：原文 / 翻譯。開頭重複歌名會自動略過。",
@@ -111,6 +116,7 @@ UI_STRINGS = {
         "spotify_key_saved": "Spotify key 已儲存，之後會一直保留。",
         "spotify_key_cleared": "Spotify key 已清除。",
         "spotify_save_failed": "儲存失敗：{error}",
+        "lyric_offset_saved": "已儲存這首歌的歌詞偏移：{offset} ms",
         "translation_enter_song_name": "請先輸入歌名。",
         "translation_loaded": "已載入已儲存的翻譯。",
         "translation_not_found": "這首歌目前沒有已儲存的翻譯。",
@@ -145,6 +151,7 @@ UI_STRINGS = {
         "button_save_spotify": "Save Spotify Key",
         "button_clear_spotify": "Clear Spotify Key",
         "button_language": "中文",
+        "button_offset_reset": "Reset",
         "field_text_color": "Text Color",
         "field_end_color": "End Color",
         "field_button_color": "Button Color",
@@ -163,6 +170,8 @@ UI_STRINGS = {
         "field_client_id": "Client ID",
         "field_client_secret": "Client Secret",
         "field_redirect_uri": "Redirect URI",
+        "field_timing_song": "Timing Track",
+        "field_lyric_offset": "Lyric Offset (ms)",
         "field_track_name": "Track",
         "field_artist_name": "Artist",
         "translation_hint": "Use pairs of lines: original / translation. A repeated title at the top will be ignored.",
@@ -174,6 +183,7 @@ UI_STRINGS = {
         "spotify_key_saved": "Spotify key saved and will be kept locally.",
         "spotify_key_cleared": "Spotify key cleared.",
         "spotify_save_failed": "Save failed: {error}",
+        "lyric_offset_saved": "Saved lyric offset for this song: {offset} ms",
         "translation_enter_song_name": "Please enter a track name first.",
         "translation_loaded": "Saved translation loaded.",
         "translation_not_found": "No saved translation was found for this song.",
@@ -684,6 +694,13 @@ def safe_strip(value):
     return str(value).strip()
 
 
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def log_warning(message, exc=None):
     print(f"[Spotify Floating Overlay] {message}", file=sys.stderr)
     if exc is not None:
@@ -769,6 +786,38 @@ def split_netease_merged_lrc(merged_lrc):
     return "\n".join(original_lines), translation_pairs
 
 
+def generate_title_search_variants(track_name):
+    base_title = safe_strip(track_name)
+    if not base_title:
+        return []
+
+    variants = []
+    seen = set()
+
+    def add_variant(text):
+        candidate = safe_strip(text)
+        dedupe_key = unicodedata.normalize("NFKC", candidate).lower()
+        if not candidate or dedupe_key in seen:
+            return
+        seen.add(dedupe_key)
+        variants.append(candidate)
+
+    add_variant(base_title)
+
+    bracket_stripped = safe_strip(re.sub(r"\s*[\(\[（【].*?[\)\]）】]\s*", " ", base_title))
+    add_variant(bracket_stripped)
+
+    no_ellipsis = safe_strip(re.sub(r"[.…・]+$", "", safe_strip(base_title)))
+    add_variant(no_ellipsis)
+    add_variant(safe_strip(re.sub(r"[.…・]+$", "", bracket_stripped)))
+
+    for variant in list(variants):
+        simplified = re.split(r"\s*[-:|/]\s*", variant, maxsplit=1)[0]
+        add_variant(simplified)
+
+    return variants
+
+
 def _netease_song_score(song, track_name, artist_name, duration_ms=0):
     song_name = safe_strip(song.get("name"))
     artists = song.get("ar") or song.get("artists") or []
@@ -814,33 +863,40 @@ def search_netease_song_id(track_name, artist_name, duration_ms=0):
     if not safe_strip(track_name):
         return None
 
-    keywords = safe_strip(f"{track_name} {artist_name}") or safe_strip(track_name)
     best_song = None
     best_score = 0.0
+    title_variants = generate_title_search_variants(track_name) or [safe_strip(track_name)]
 
-    for endpoint in ("cloudsearch", "search"):
-        try:
-            response = requests.get(
-                f"{DEFAULT_NETEASE_API_BASE_URL}/{endpoint}",
-                params={"keywords": keywords, "type": 1, "limit": 10},
-                timeout=5,
-                headers=REQUEST_HEADERS,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except (requests.RequestException, ValueError):
-            continue
-
-        songs = ((payload or {}).get("result") or {}).get("songs") or []
-        for song in songs:
-            if not isinstance(song, dict):
+    for title_variant in title_variants:
+        keywords = safe_strip(f"{title_variant} {artist_name}") or title_variant
+        for endpoint in ("cloudsearch", "search"):
+            try:
+                response = requests.get(
+                    f"{DEFAULT_NETEASE_API_BASE_URL}/{endpoint}",
+                    params={"keywords": keywords, "type": 1, "limit": 10},
+                    timeout=5,
+                    headers=REQUEST_HEADERS,
+                )
+                response.raise_for_status()
+                payload = response.json()
+            except (requests.RequestException, ValueError):
                 continue
 
-            score = _netease_song_score(song, track_name, artist_name, duration_ms)
-            if score > best_score:
-                best_score = score
-                best_song = song
+            songs = ((payload or {}).get("result") or {}).get("songs") or []
+            for song in songs:
+                if not isinstance(song, dict):
+                    continue
 
+                score = _netease_song_score(song, title_variant, artist_name, duration_ms)
+                score = max(score, _netease_song_score(song, track_name, artist_name, duration_ms))
+                if title_variant != track_name:
+                    score += 0.2
+                if score > best_score:
+                    best_score = score
+                    best_song = song
+
+            if best_song and best_score >= 3.5:
+                break
         if best_song and best_score >= 3.5:
             break
 
@@ -1026,7 +1082,7 @@ def align_translations_to_lyrics(lyrics_data, translation_pairs):
     if not lyrics_data:
         return []
 
-    aligned_lyrics = [dict(lyric, translation="") for lyric in lyrics_data]
+    aligned_lyrics = [dict(lyric, translation="", translation_offset_ms=0) for lyric in lyrics_data]
     if not translation_pairs:
         return aligned_lyrics
 
@@ -1076,9 +1132,13 @@ def align_translations_to_lyrics(lyrics_data, translation_pairs):
             continue
 
         translation_text = translation_pairs[best_match_index]["translation"]
+        translation_offset_ms = safe_int(
+            translation_pairs[best_match_index].get("translation_offset_ms"), 0
+        )
         span_end = min(lyric_index + best_span_length, len(aligned_lyrics))
         for index in range(lyric_index, span_end):
             aligned_lyrics[index]["translation"] = translation_text
+            aligned_lyrics[index]["translation_offset_ms"] = translation_offset_ms
         pair_index = best_match_index + 1
         lyric_index = span_end
 
@@ -1113,10 +1173,31 @@ def parse_manual_translation_block(raw_text, track_label=""):
                 "original": original_text,
                 "normalized_original": normalize_text(original_text),
                 "translation": translation_text,
+                "translation_offset_ms": 0,
             }
         )
 
     return translation_pairs
+
+
+def normalize_translation_entries(entries):
+    normalized_entries = []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        original_text = safe_strip(entry.get("original"))
+        translation_text = safe_strip(entry.get("translation"))
+        if not original_text or not translation_text:
+            continue
+        normalized_entries.append(
+            {
+                "original": original_text,
+                "normalized_original": normalize_text(original_text),
+                "translation": translation_text,
+                "translation_offset_ms": safe_int(entry.get("translation_offset_ms"), 0),
+            }
+        )
+    return normalized_entries
 
 
 def load_manual_translation_inputs():
@@ -1146,7 +1227,11 @@ def load_manual_translation_inputs():
         artist_name = safe_strip(value.get("artist_name"))
         content = safe_strip(value.get("content"))
         synced_lyrics = safe_strip(value.get("synced_lyrics"))
-        if not track_name or (not content and not synced_lyrics):
+        lyric_offset_ms = safe_int(value.get("lyric_offset_ms"), 0)
+        translation_entries = normalize_translation_entries(value.get("translation_entries"))
+        if not track_name or (
+            not content and not synced_lyrics and lyric_offset_ms == 0 and not translation_entries
+        ):
             continue
         normalized_key = key or build_translation_key(track_name, artist_name)
         normalized_data[normalized_key] = {
@@ -1154,6 +1239,8 @@ def load_manual_translation_inputs():
             "artist_name": artist_name,
             "content": content,
             "synced_lyrics": synced_lyrics,
+            "lyric_offset_ms": lyric_offset_ms,
+            "translation_entries": translation_entries,
         }
 
     return normalized_data
@@ -1168,13 +1255,19 @@ def save_manual_translation_inputs(manual_translation_inputs):
         artist_name = safe_strip(value.get("artist_name"))
         content = safe_strip(value.get("content"))
         synced_lyrics = safe_strip(value.get("synced_lyrics"))
-        if not track_name or (not content and not synced_lyrics):
+        lyric_offset_ms = safe_int(value.get("lyric_offset_ms"), 0)
+        translation_entries = normalize_translation_entries(value.get("translation_entries"))
+        if not track_name or (
+            not content and not synced_lyrics and lyric_offset_ms == 0 and not translation_entries
+        ):
             continue
         payload[key] = {
             "track_name": track_name,
             "artist_name": artist_name,
             "content": content,
             "synced_lyrics": synced_lyrics,
+            "lyric_offset_ms": lyric_offset_ms,
+            "translation_entries": translation_entries,
         }
 
     with open(MANUAL_TRANSLATIONS_PATH, "w", encoding="utf-8") as file:
@@ -1619,6 +1712,71 @@ class OverlayTranslationWindow(QWidget):
         self.hint_label.setWordWrap(True)
         self.hint_label.setStyleSheet("color: rgba(226, 232, 240, 0.82); font-size: 12px;")
 
+        offset_form = QFormLayout()
+        offset_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        offset_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        offset_form.setHorizontalSpacing(10)
+        offset_form.setVerticalSpacing(8)
+
+        self.timing_song_label = QLabel()
+        self.timing_song_value = QLabel("")
+        self.timing_song_value.setWordWrap(True)
+        self.timing_song_value.setStyleSheet("color: rgba(226, 232, 240, 0.82);")
+
+        self.lyric_offset_label = QLabel()
+        self.lyric_offset = QSpinBox()
+        self.lyric_offset.setRange(-5000, 5000)
+        self.lyric_offset.setSingleStep(10)
+        self.lyric_offset.valueChanged.connect(self.overlay.update_current_track_lyric_offset)
+
+        offset_button_row = QHBoxLayout()
+        offset_button_row.setContentsMargins(0, 0, 0, 0)
+        offset_button_row.setSpacing(6)
+
+        self.offset_minus_large = QPushButton("-100")
+        self.offset_minus_small = QPushButton("-10")
+        self.offset_reset_button = QPushButton("0")
+        self.offset_plus_small = QPushButton("+10")
+        self.offset_plus_large = QPushButton("+100")
+
+        self.offset_minus_large.clicked.connect(lambda: self.overlay.adjust_current_track_lyric_offset(-100))
+        self.offset_minus_small.clicked.connect(lambda: self.overlay.adjust_current_track_lyric_offset(-10))
+        self.offset_reset_button.clicked.connect(self.overlay.reset_current_track_lyric_offset)
+        self.offset_plus_small.clicked.connect(lambda: self.overlay.adjust_current_track_lyric_offset(10))
+        self.offset_plus_large.clicked.connect(lambda: self.overlay.adjust_current_track_lyric_offset(100))
+
+        offset_button_row.addWidget(self.offset_minus_large)
+        offset_button_row.addWidget(self.offset_minus_small)
+        offset_button_row.addWidget(self.offset_reset_button)
+        offset_button_row.addWidget(self.offset_plus_small)
+        offset_button_row.addWidget(self.offset_plus_large)
+
+        offset_value_row = QHBoxLayout()
+        offset_value_row.setContentsMargins(0, 0, 0, 0)
+        offset_value_row.setSpacing(8)
+        offset_value_row.addWidget(self.lyric_offset)
+        offset_value_row.addLayout(offset_button_row)
+        offset_value_row.addStretch(1)
+
+        offset_form.addRow(self.timing_song_label, self.timing_song_value)
+        offset_form.addRow(self.lyric_offset_label, offset_value_row)
+
+        self.line_editor_hint = QLabel("逐句翻譯與偏移")
+        self.line_editor_hint.setStyleSheet("color: rgba(226, 232, 240, 0.82); font-size: 12px;")
+
+        self.line_scroll = QScrollArea()
+        self.line_scroll.setWidgetResizable(True)
+        self.line_scroll.setMinimumHeight(220)
+        self.line_scroll.setStyleSheet(
+            "QScrollArea { border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 8px; }"
+        )
+        self.line_scroll_content = QWidget()
+        self.line_scroll_layout = QVBoxLayout(self.line_scroll_content)
+        self.line_scroll_layout.setContentsMargins(10, 10, 10, 10)
+        self.line_scroll_layout.setSpacing(10)
+        self.line_scroll.setWidget(self.line_scroll_content)
+        self.line_rows = []
+
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText(
             "刀馬 刀馬 (DJ卡點版) - 布卡萬\n刀馬 刀馬 (DJ卡點版) - 布卡萬\nOlha só minha ponto 30\n看看我這30口徑"
@@ -1645,6 +1803,9 @@ class OverlayTranslationWindow(QWidget):
 
         layout.addLayout(form)
         layout.addWidget(self.hint_label)
+        layout.addLayout(offset_form)
+        layout.addWidget(self.line_editor_hint)
+        layout.addWidget(self.line_scroll)
         layout.addWidget(self.editor)
         layout.addWidget(self.status_label)
         layout.addLayout(button_row)
@@ -1662,25 +1823,120 @@ class OverlayTranslationWindow(QWidget):
         self.status_label.setText(message)
 
     def sync_from_overlay(self):
-        if not self.track_name_input.text().strip():
-            self.track_name_input.setText(self.overlay.current_track_name)
-        if not self.artist_name_input.text().strip():
-            self.artist_name_input.setText(self.overlay.current_track_artist)
-        if not self.editor.toPlainText().strip():
-            self.editor.blockSignals(True)
-            self.editor.setPlainText(
-                self.overlay.translation_content_for_key(self.overlay.current_track_key)
-            )
-            self.editor.blockSignals(False)
+        self.lyric_offset.blockSignals(True)
+        self.lyric_offset.setValue(self.overlay.current_track_lyric_offset_ms)
+        self.lyric_offset.blockSignals(False)
+        self.timing_song_value.setText(self.overlay.current_track_display_name())
+        self.track_name_input.setText(self.overlay.current_track_name)
+        self.artist_name_input.setText(self.overlay.current_track_artist)
+        self.set_line_entries(self.overlay.current_song_translation_editor_entries())
+        self.editor.blockSignals(True)
+        self.editor.setPlainText(
+            self.overlay.translation_content_for_key(self.overlay.current_track_key)
+        )
+        self.editor.blockSignals(False)
 
     def update_ui_texts(self):
         self.setWindowTitle(self.overlay.tr("translation_window_title"))
         self.track_name_label.setText(self.overlay.tr("field_track_name"))
         self.artist_name_label.setText(self.overlay.tr("field_artist_name"))
+        self.timing_song_label.setText(self.overlay.tr("field_timing_song"))
+        self.lyric_offset_label.setText(self.overlay.tr("field_lyric_offset"))
+        self.timing_song_value.setText(self.overlay.current_track_display_name())
+        self.line_editor_hint.setText(self.overlay.tr("translation_window_title"))
         self.hint_label.setText(self.overlay.tr("translation_hint"))
         self.apply_button.setText(self.overlay.tr("button_apply"))
         self.clear_button.setText(self.overlay.tr("button_clear"))
         self.load_button.setText(self.overlay.tr("button_load"))
+
+    def clear_line_entries(self):
+        while self.line_scroll_layout.count():
+            item = self.line_scroll_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.line_rows = []
+
+    def set_line_entries(self, entries):
+        self.clear_line_entries()
+        for entry in entries or []:
+            self._append_line_entry(entry)
+        self.line_scroll_layout.addStretch(1)
+
+    def line_entries(self):
+        entries = []
+        for row in self.line_rows:
+            translation_text = safe_strip(row["translation_input"].text())
+            if not translation_text:
+                continue
+            entries.append(
+                {
+                    "original": row["original_text"],
+                    "normalized_original": normalize_text(row["original_text"]),
+                    "translation": translation_text,
+                    "translation_offset_ms": row["offset_spinbox"].value(),
+                }
+            )
+        return entries
+
+    def _append_line_entry(self, entry):
+        row_frame = QFrame()
+        row_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        row_frame.setStyleSheet(
+            "QFrame { border: 1px solid rgba(148, 163, 184, 0.16); border-radius: 8px; background: rgba(15, 23, 42, 0.12); }"
+        )
+        row_layout = QVBoxLayout(row_frame)
+        row_layout.setContentsMargins(10, 10, 10, 10)
+        row_layout.setSpacing(8)
+
+        original_label = QLabel(safe_strip(entry.get("original")))
+        original_label.setWordWrap(True)
+        original_label.setStyleSheet("font-weight: 600; color: rgba(248, 250, 252, 0.95);")
+
+        offset_row = QHBoxLayout()
+        offset_row.setContentsMargins(0, 0, 0, 0)
+        offset_row.setSpacing(6)
+        offset_label = QLabel("ms")
+        offset_spinbox = QSpinBox()
+        offset_spinbox.setRange(-5000, 5000)
+        offset_spinbox.setSingleStep(10)
+        offset_spinbox.setValue(safe_int(entry.get("translation_offset_ms"), 0))
+        minus_large = QPushButton("-100")
+        minus_small = QPushButton("-10")
+        reset_button = QPushButton("0")
+        plus_small = QPushButton("+10")
+        plus_large = QPushButton("+100")
+
+        minus_large.clicked.connect(lambda _=False, box=offset_spinbox: box.setValue(box.value() - 100))
+        minus_small.clicked.connect(lambda _=False, box=offset_spinbox: box.setValue(box.value() - 10))
+        reset_button.clicked.connect(lambda _=False, box=offset_spinbox: box.setValue(0))
+        plus_small.clicked.connect(lambda _=False, box=offset_spinbox: box.setValue(box.value() + 10))
+        plus_large.clicked.connect(lambda _=False, box=offset_spinbox: box.setValue(box.value() + 100))
+
+        offset_row.addWidget(offset_label)
+        offset_row.addWidget(offset_spinbox)
+        offset_row.addWidget(minus_large)
+        offset_row.addWidget(minus_small)
+        offset_row.addWidget(reset_button)
+        offset_row.addWidget(plus_small)
+        offset_row.addWidget(plus_large)
+        offset_row.addStretch(1)
+
+        translation_input = QLineEdit()
+        translation_input.setText(safe_strip(entry.get("translation")))
+
+        row_layout.addWidget(original_label)
+        row_layout.addLayout(offset_row)
+        row_layout.addWidget(translation_input)
+
+        self.line_scroll_layout.addWidget(row_frame)
+        self.line_rows.append(
+            {
+                "original_text": safe_strip(entry.get("original")),
+                "translation_input": translation_input,
+                "offset_spinbox": offset_spinbox,
+            }
+        )
 
 
 class LyricsOverlay(QWidget):
@@ -1707,6 +1963,7 @@ class LyricsOverlay(QWidget):
         self.last_track_name = "Spotify Floating Overlay"
         self.last_progress_ms = 0
         self.last_progress_timestamp = time.monotonic()
+        self.current_track_lyric_offset_ms = 0
         self.text_style = {
             "text_color": "#FFFFFF",
             "accent_color": "#60A5FA",
@@ -1890,28 +2147,42 @@ class LyricsOverlay(QWidget):
         for index, lyric in enumerate(self.cached_lyrics):
             if progress_ms >= lyric["time"]:
                 current_line = lyric["text"] or "..."
-                current_translation = lyric.get("translation", "")
                 start_time = lyric["time"]
                 end_time = self.cached_lyrics[index + 1]["time"] if index + 1 < len(self.cached_lyrics) else start_time + 4000
                 duration = max(end_time - start_time, 1)
                 current_progress = min(max((progress_ms - start_time) / duration, 0.0), 1.0)
+                translation_start = start_time + safe_int(lyric.get("translation_offset_ms"), 0)
+                if progress_ms >= translation_start:
+                    current_translation = lyric.get("translation", "")
+                else:
+                    current_translation = ""
                 if index + 1 < len(self.cached_lyrics):
                     next_line = self.cached_lyrics[index + 1]["text"] or ""
-                    next_translation = self.cached_lyrics[index + 1].get("translation", "")
+                    next_translation_start = self.cached_lyrics[index + 1]["time"] + safe_int(
+                        self.cached_lyrics[index + 1].get("translation_offset_ms"), 0
+                    )
+                    if progress_ms >= next_translation_start:
+                        next_translation = self.cached_lyrics[index + 1].get("translation", "")
+                    else:
+                        next_translation = ""
             else:
                 if current_line == "...":
                     next_line = lyric.get("text", "")
-                    next_translation = lyric.get("translation", "")
+                    translation_start = lyric["time"] + safe_int(lyric.get("translation_offset_ms"), 0)
+                    if progress_ms >= translation_start:
+                        next_translation = lyric.get("translation", "")
+                    else:
+                        next_translation = ""
                 break
 
         return current_line, current_translation, next_line, next_translation, current_progress
 
     def _estimated_progress_ms(self):
         if not self.is_playing:
-            return self.last_progress_ms
+            return max(self.last_progress_ms - self.current_track_lyric_offset_ms, 0)
 
         elapsed_ms = int((time.monotonic() - self.last_progress_timestamp) * 1000)
-        return max(self.last_progress_ms + elapsed_ms, 0)
+        return max(self.last_progress_ms + elapsed_ms - self.current_track_lyric_offset_ms, 0)
 
     def _ensure_on_top(self, force_front=False):
         _configure_macos_panel(self, accepts_input=self.drag_enabled, force_front=force_front)
@@ -2258,9 +2529,108 @@ class LyricsOverlay(QWidget):
         entry = self.manual_translation_inputs.get(storage_key) or {}
         return entry.get("content", "")
 
+    def translation_entries_for_key(self, storage_key):
+        entry = self.manual_translation_inputs.get(storage_key) or {}
+        return normalize_translation_entries(entry.get("translation_entries"))
+
     def synced_lyrics_for_key(self, storage_key):
         entry = self.manual_translation_inputs.get(storage_key) or {}
         return safe_strip(entry.get("synced_lyrics"))
+
+    def lyric_offset_for_key(self, storage_key):
+        entry = self.manual_translation_inputs.get(storage_key) or {}
+        return safe_int(entry.get("lyric_offset_ms"), 0)
+
+    def current_track_display_name(self):
+        if self.current_track_name and self.current_track_artist:
+            return f"{self.current_track_name} - {self.current_track_artist}"
+        if self.current_track_name:
+            return self.current_track_name
+        return "-"
+
+    def current_song_translation_editor_entries(self):
+        if not self.base_lyrics:
+            return []
+
+        stored_entries = self.translation_entries_for_key(self.current_track_key)
+        if stored_entries:
+            aligned_lyrics = align_translations_to_lyrics(self.base_lyrics, stored_entries)
+        else:
+            raw_text = self.translation_content_for_key(self.current_track_key)
+            parsed_pairs = parse_manual_translation_block(
+                raw_text, f"{self.current_track_name} - {self.current_track_artist}"
+            )
+            aligned_lyrics = align_translations_to_lyrics(self.base_lyrics, parsed_pairs)
+
+        entries = []
+        for lyric in aligned_lyrics:
+            original_text = safe_strip(lyric.get("text"))
+            if not original_text:
+                continue
+            entries.append(
+                {
+                    "original": original_text,
+                    "translation": safe_strip(lyric.get("translation")),
+                    "translation_offset_ms": safe_int(lyric.get("translation_offset_ms"), 0),
+                }
+            )
+        return entries
+
+    def _sync_track_timing_controls(self):
+        if not hasattr(self, "translation_window"):
+            return
+        self.translation_window.lyric_offset.blockSignals(True)
+        self.translation_window.lyric_offset.setValue(self.current_track_lyric_offset_ms)
+        self.translation_window.lyric_offset.blockSignals(False)
+        self.translation_window.timing_song_value.setText(self.current_track_display_name())
+
+    def update_current_track_lyric_offset(self):
+        if not hasattr(self, "translation_window"):
+            return
+
+        offset_ms = self.translation_window.lyric_offset.value()
+        self.current_track_lyric_offset_ms = offset_ms
+        self._sync_track_timing_controls()
+
+        if not self.current_track_key or not self.current_track_name:
+            return
+
+        existing_entry = dict(self.manual_translation_inputs.get(self.current_track_key) or {})
+        updated_entry = {
+            "track_name": self.current_track_name,
+            "artist_name": self.current_track_artist,
+            "content": safe_strip(existing_entry.get("content")),
+            "synced_lyrics": safe_strip(existing_entry.get("synced_lyrics")),
+            "lyric_offset_ms": offset_ms,
+            "translation_entries": normalize_translation_entries(existing_entry.get("translation_entries")),
+        }
+
+        if (
+            not updated_entry["content"]
+            and not updated_entry["synced_lyrics"]
+            and offset_ms == 0
+            and not updated_entry["translation_entries"]
+        ):
+            self.manual_translation_inputs.pop(self.current_track_key, None)
+        else:
+            self.manual_translation_inputs[self.current_track_key] = updated_entry
+
+        save_manual_translation_inputs(self.manual_translation_inputs)
+        self.translation_window.set_status(self.tr("lyric_offset_saved", offset=offset_ms))
+        if self.cached_lyrics:
+            self.animate_current_line()
+
+    def adjust_current_track_lyric_offset(self, delta_ms):
+        if not hasattr(self, "translation_window"):
+            return
+        self.translation_window.lyric_offset.setValue(
+            self.translation_window.lyric_offset.value() + delta_ms
+        )
+
+    def reset_current_track_lyric_offset(self):
+        if not hasattr(self, "translation_window"):
+            return
+        self.translation_window.lyric_offset.setValue(0)
 
     def cache_netease_lyrics_bundle(self, track_name, artist_name, synced_lyrics, translation_pairs):
         storage_key = build_translation_key(track_name, artist_name)
@@ -2270,10 +2640,14 @@ class LyricsOverlay(QWidget):
             "artist_name": artist_name,
             "content": safe_strip(existing_entry.get("content")),
             "synced_lyrics": safe_strip(synced_lyrics),
+            "lyric_offset_ms": safe_int(existing_entry.get("lyric_offset_ms"), 0),
+            "translation_entries": normalize_translation_entries(existing_entry.get("translation_entries")),
         }
 
         if not updated_entry["content"] and translation_pairs:
             updated_entry["content"] = build_translation_block(translation_pairs)
+        if not updated_entry["translation_entries"] and translation_pairs:
+            updated_entry["translation_entries"] = normalize_translation_entries(translation_pairs)
 
         if (
             existing_entry.get("track_name") == updated_entry["track_name"]
@@ -2287,6 +2661,10 @@ class LyricsOverlay(QWidget):
         save_manual_translation_inputs(self.manual_translation_inputs)
 
     def _manual_translation_pairs_for_current(self):
+        stored_entries = self.translation_entries_for_key(self.current_track_key)
+        if stored_entries:
+            return stored_entries
+
         raw_text = self.translation_content_for_key(self.current_track_key)
         if not raw_text:
             return []
@@ -2296,7 +2674,10 @@ class LyricsOverlay(QWidget):
         )
 
     def has_manual_translation_for_key(self, storage_key):
-        return bool(safe_strip(self.translation_content_for_key(storage_key)))
+        return bool(
+            safe_strip(self.translation_content_for_key(storage_key))
+            or self.translation_entries_for_key(storage_key)
+        )
 
     def _build_cached_lyrics(self, lyrics_data):
         if not lyrics_data:
@@ -2395,8 +2776,13 @@ class LyricsOverlay(QWidget):
             return
 
         content = self.translation_content_for_key(storage_key)
+        translation_entries = self.translation_entries_for_key(storage_key)
         self.translation_window.editor.setPlainText(content)
+        if storage_key == self.current_track_key and self.base_lyrics:
+            self.translation_window.set_line_entries(self.current_song_translation_editor_entries())
         if content:
+            self.translation_window.set_status(self.tr("translation_loaded"))
+        elif translation_entries:
             self.translation_window.set_status(self.tr("translation_loaded"))
         else:
             self.translation_window.set_status(self.tr("translation_not_found"))
@@ -2408,15 +2794,32 @@ class LyricsOverlay(QWidget):
             self.translation_window.set_status(self.tr("translation_enter_song_name"), error=True)
             return
 
-        if not raw_text:
+        line_entries = []
+        if storage_key == self.current_track_key and self.base_lyrics:
+            line_entries = normalize_translation_entries(self.translation_window.line_entries())
+
+        if not raw_text and not line_entries:
             existing_entry = dict(self.manual_translation_inputs.get(storage_key) or {})
             cached_synced_lyrics = safe_strip(existing_entry.get("synced_lyrics"))
+            lyric_offset_ms = safe_int(existing_entry.get("lyric_offset_ms"), 0)
+            translation_entries = normalize_translation_entries(existing_entry.get("translation_entries"))
             if cached_synced_lyrics:
                 self.manual_translation_inputs[storage_key] = {
                     "track_name": track_name,
                     "artist_name": artist_name,
                     "content": "",
                     "synced_lyrics": cached_synced_lyrics,
+                    "lyric_offset_ms": lyric_offset_ms,
+                    "translation_entries": translation_entries,
+                }
+            elif lyric_offset_ms != 0 or translation_entries:
+                self.manual_translation_inputs[storage_key] = {
+                    "track_name": track_name,
+                    "artist_name": artist_name,
+                    "content": "",
+                    "synced_lyrics": "",
+                    "lyric_offset_ms": lyric_offset_ms,
+                    "translation_entries": translation_entries,
                 }
             else:
                 self.manual_translation_inputs.pop(storage_key, None)
@@ -2427,9 +2830,13 @@ class LyricsOverlay(QWidget):
             self.translation_window.set_status(self.tr("translation_cleared_current"))
             return
 
-        translation_pairs = parse_manual_translation_block(
-            raw_text, f"{track_name} - {artist_name}"
-        )
+        translation_pairs = line_entries
+        generated_content = build_translation_block(line_entries)
+        if raw_text and not line_entries:
+            translation_pairs = parse_manual_translation_block(
+                raw_text, f"{track_name} - {artist_name}"
+            )
+            generated_content = raw_text
         if not translation_pairs:
             self.translation_window.set_status(self.tr("translation_format_invalid"), error=True)
             return
@@ -2438,13 +2845,17 @@ class LyricsOverlay(QWidget):
         self.manual_translation_inputs[storage_key] = {
             "track_name": track_name,
             "artist_name": artist_name,
-            "content": raw_text,
+            "content": generated_content,
             "synced_lyrics": safe_strip(existing_entry.get("synced_lyrics")),
+            "lyric_offset_ms": safe_int(existing_entry.get("lyric_offset_ms"), 0),
+            "translation_entries": normalize_translation_entries(translation_pairs),
         }
         save_manual_translation_inputs(self.manual_translation_inputs)
 
         if storage_key == self.current_track_key:
             self.cached_lyrics = self._build_cached_lyrics(self.base_lyrics)
+            if self.base_lyrics:
+                self.translation_window.set_line_entries(self.current_song_translation_editor_entries())
             matched_count = sum(1 for lyric in self.cached_lyrics if lyric.get("translation"))
             self.translation_window.set_status(
                 self.tr("translation_saved_applied", count=matched_count)
@@ -2462,17 +2873,32 @@ class LyricsOverlay(QWidget):
 
         existing_entry = dict(self.manual_translation_inputs.get(storage_key) or {})
         cached_synced_lyrics = safe_strip(existing_entry.get("synced_lyrics"))
+        lyric_offset_ms = safe_int(existing_entry.get("lyric_offset_ms"), 0)
+        translation_entries = normalize_translation_entries(existing_entry.get("translation_entries"))
         if cached_synced_lyrics:
             self.manual_translation_inputs[storage_key] = {
                 "track_name": track_name,
                 "artist_name": artist_name,
                 "content": "",
                 "synced_lyrics": cached_synced_lyrics,
+                "lyric_offset_ms": lyric_offset_ms,
+                "translation_entries": translation_entries,
+            }
+        elif lyric_offset_ms != 0 or translation_entries:
+            self.manual_translation_inputs[storage_key] = {
+                "track_name": track_name,
+                "artist_name": artist_name,
+                "content": "",
+                "synced_lyrics": "",
+                "lyric_offset_ms": lyric_offset_ms,
+                "translation_entries": translation_entries,
             }
         else:
             self.manual_translation_inputs.pop(storage_key, None)
         save_manual_translation_inputs(self.manual_translation_inputs)
         self.translation_window.editor.clear()
+        if storage_key == self.current_track_key and self.base_lyrics:
+            self.translation_window.set_line_entries(self.current_song_translation_editor_entries())
         if storage_key == self.current_track_key:
             self.cached_lyrics = self._build_cached_lyrics(self.base_lyrics)
             self.animate_current_line()
@@ -2524,8 +2950,12 @@ class LyricsOverlay(QWidget):
                 self.is_playing = False
                 self.current_track_id = None
                 self.current_track_key = None
+                self.current_track_name = ""
+                self.current_track_artist = ""
+                self.current_track_lyric_offset_ms = 0
                 self.base_lyrics = []
                 self.cached_lyrics = []
+                self._sync_track_timing_controls()
                 self._set_labels(
                     self.tr("spotify_unconfigured_title"),
                     self.tr("spotify_unconfigured_message"),
@@ -2543,8 +2973,12 @@ class LyricsOverlay(QWidget):
                 self.last_progress_timestamp = time.monotonic()
                 self.current_track_id = None
                 self.current_track_key = None
+                self.current_track_name = ""
+                self.current_track_artist = ""
+                self.current_track_lyric_offset_ms = 0
                 self.base_lyrics = []
                 self.cached_lyrics = []
+                self._sync_track_timing_controls()
                 self._set_labels(
                     self.tr("spotify_paused_title"),
                     self.tr("spotify_waiting_message"),
@@ -2585,6 +3019,8 @@ class LyricsOverlay(QWidget):
             self.current_track_name = track_name
             self.current_track_artist = artist_name
             self.current_track_key = self._build_track_key(track_id, track_name, artist_name)
+            self.current_track_lyric_offset_ms = self.lyric_offset_for_key(self.current_track_key)
+            self._sync_track_timing_controls()
 
             if track_id != self.current_track_id:
                 self.base_lyrics, self.cached_lyrics = self._load_track_lyrics(
@@ -2593,9 +3029,11 @@ class LyricsOverlay(QWidget):
                     item.get("duration_ms", 0),
                 )
                 self.current_track_id = track_id
+                if self.translation_window.isVisible():
+                    self.translation_window.sync_from_overlay()
 
             current_line, current_translation, next_line, next_translation, current_progress = self._find_active_lines(
-                self.last_progress_ms
+                self._estimated_progress_ms()
             )
             self._set_labels(
                 f"{track_name} - {artist_name}",
@@ -2609,8 +3047,12 @@ class LyricsOverlay(QWidget):
             self.spotify = None
             self.current_track_id = None
             self.current_track_key = None
+            self.current_track_name = ""
+            self.current_track_artist = ""
+            self.current_track_lyric_offset_ms = 0
             self.base_lyrics = []
             self.cached_lyrics = []
+            self._sync_track_timing_controls()
             self._set_labels(
                 self.tr("spotify_key_error_title"),
                 self.tr("spotify_key_error_message"),
@@ -2621,6 +3063,7 @@ class LyricsOverlay(QWidget):
             )
         except Exception as exc:
             log_warning("Unexpected error while refreshing Spotify playback.", exc)
+            self._sync_track_timing_controls()
             self._set_labels(
                 self.tr("spotify_error_title"),
                 self.tr("spotify_error_message", error=exc),
