@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -60,6 +61,134 @@ WINDOW_TRANSPARENT_FOR_INPUT = getattr(
 )
 MOJIGECI_QUERY_ALIASES = {
     ("bldama", "hachi"): ["ビー玉 HACHI", "ビー玉"],
+}
+UI_STRINGS = {
+    "zh": {
+        "settings_window_title": "字幕設定",
+        "translation_window_title": "翻譯字幕",
+        "button_move": "移動",
+        "button_lock": "鎖定",
+        "button_settings": "設定",
+        "button_translation": "翻譯",
+        "button_close": "關閉",
+        "button_apply": "套用",
+        "button_clear": "清除",
+        "button_load": "讀取",
+        "button_save_spotify": "儲存 Spotify Key",
+        "button_clear_spotify": "清除 Spotify Key",
+        "button_language": "English",
+        "field_text_color": "字色",
+        "field_end_color": "終點色",
+        "field_button_color": "按鈕色",
+        "field_main_size": "主字幕",
+        "field_main_translation_size": "主翻譯",
+        "field_subtitle_size": "副字幕",
+        "field_subtitle_translation_size": "副翻譯",
+        "field_gap_song": "歌名距離",
+        "field_gap_primary": "行距 1",
+        "field_gap_middle": "行距 2",
+        "field_gap_subtitle": "行距 3",
+        "field_show_song": "顯示歌名",
+        "field_show_main": "顯示主歌詞",
+        "field_show_subtitle": "顯示副歌詞",
+        "field_show_translation": "顯示翻譯",
+        "field_client_id": "Client ID",
+        "field_client_secret": "Client Secret",
+        "field_redirect_uri": "Redirect URI",
+        "field_track_name": "歌名",
+        "field_artist_name": "歌手",
+        "translation_hint": "每兩行一組：原文 / 翻譯。開頭重複歌名會自動略過。",
+        "dialog_pick_text_color": "選擇字幕顏色",
+        "dialog_pick_end_color": "選擇主字幕終點色",
+        "dialog_pick_button_color": "選擇按鈕顏色",
+        "spotify_key_empty": "Spotify key 不可留空。",
+        "spotify_key_prompt": "請填入 Spotify Client ID、Client Secret 和 Redirect URI。",
+        "spotify_key_saved": "Spotify key 已儲存，之後會一直保留。",
+        "spotify_key_cleared": "Spotify key 已清除。",
+        "spotify_save_failed": "儲存失敗：{error}",
+        "translation_enter_song_name": "請先輸入歌名。",
+        "translation_loaded": "已載入已儲存的翻譯。",
+        "translation_not_found": "這首歌目前沒有已儲存的翻譯。",
+        "translation_cleared_current": "已清空這首歌的手動翻譯。",
+        "translation_format_invalid": "格式不對，請用原文 / 翻譯成對貼上。",
+        "translation_saved_applied": "已儲存並套用 {count} 行翻譯。",
+        "translation_saved_json": "已儲存到 JSON，播放到這首歌時會自動套用。",
+        "translation_deleted_json": "已刪除這首歌的 JSON 翻譯。",
+        "spotify_unconfigured_title": "Spotify 未設定",
+        "spotify_unconfigured_message": "打開設定並填入 Spotify Client ID / Secret",
+        "spotify_paused_title": "Spotify 已暫停",
+        "spotify_waiting_message": "等待 Spotify 播放中...",
+        "spotify_unable_title": "Spotify",
+        "spotify_unable_message": "無法讀取目前歌曲。",
+        "spotify_key_error_title": "Spotify Key Error",
+        "spotify_key_error_message": "請到設定填入 Spotify Client ID / Secret / Redirect URI",
+        "spotify_error_title": "Spotify Error",
+        "spotify_error_message": "錯誤：{error}",
+        "no_synced_lyrics_found": "No synced lyrics found.",
+    },
+    "en": {
+        "settings_window_title": "Subtitle Settings",
+        "translation_window_title": "Translation Subtitles",
+        "button_move": "Move",
+        "button_lock": "Lock",
+        "button_settings": "Settings",
+        "button_translation": "Translate",
+        "button_close": "Quit",
+        "button_apply": "Apply",
+        "button_clear": "Clear",
+        "button_load": "Load",
+        "button_save_spotify": "Save Spotify Key",
+        "button_clear_spotify": "Clear Spotify Key",
+        "button_language": "中文",
+        "field_text_color": "Text Color",
+        "field_end_color": "End Color",
+        "field_button_color": "Button Color",
+        "field_main_size": "Main Lyric",
+        "field_main_translation_size": "Main Translation",
+        "field_subtitle_size": "Next Lyric",
+        "field_subtitle_translation_size": "Next Translation",
+        "field_gap_song": "Title Gap",
+        "field_gap_primary": "Gap 1",
+        "field_gap_middle": "Gap 2",
+        "field_gap_subtitle": "Gap 3",
+        "field_show_song": "Show Title",
+        "field_show_main": "Show Main Lyric",
+        "field_show_subtitle": "Show Next Lyric",
+        "field_show_translation": "Show Translation",
+        "field_client_id": "Client ID",
+        "field_client_secret": "Client Secret",
+        "field_redirect_uri": "Redirect URI",
+        "field_track_name": "Track",
+        "field_artist_name": "Artist",
+        "translation_hint": "Use pairs of lines: original / translation. A repeated title at the top will be ignored.",
+        "dialog_pick_text_color": "Pick Text Color",
+        "dialog_pick_end_color": "Pick Main Lyric End Color",
+        "dialog_pick_button_color": "Pick Button Color",
+        "spotify_key_empty": "Spotify key cannot be empty.",
+        "spotify_key_prompt": "Please fill in Spotify Client ID, Client Secret, and Redirect URI.",
+        "spotify_key_saved": "Spotify key saved and will be kept locally.",
+        "spotify_key_cleared": "Spotify key cleared.",
+        "spotify_save_failed": "Save failed: {error}",
+        "translation_enter_song_name": "Please enter a track name first.",
+        "translation_loaded": "Saved translation loaded.",
+        "translation_not_found": "No saved translation was found for this song.",
+        "translation_cleared_current": "Manual translation for this song has been cleared.",
+        "translation_format_invalid": "Invalid format. Paste original / translation in pairs.",
+        "translation_saved_applied": "Saved and applied {count} translated lines.",
+        "translation_saved_json": "Saved to JSON and will auto-apply when this song plays.",
+        "translation_deleted_json": "Deleted this song's JSON translation.",
+        "spotify_unconfigured_title": "Spotify Not Configured",
+        "spotify_unconfigured_message": "Open Settings and add Spotify Client ID / Secret",
+        "spotify_paused_title": "Spotify Paused",
+        "spotify_waiting_message": "Waiting for Spotify playback...",
+        "spotify_unable_title": "Spotify",
+        "spotify_unable_message": "Unable to read current track.",
+        "spotify_key_error_title": "Spotify Key Error",
+        "spotify_key_error_message": "Open Settings and fill Spotify Client ID / Secret / Redirect URI",
+        "spotify_error_title": "Spotify Error",
+        "spotify_error_message": "Error: {error}",
+        "no_synced_lyrics_found": "No synced lyrics found.",
+    },
 }
 
 if platform.system() == "Darwin":
@@ -694,25 +823,25 @@ class OverlayControl(QWidget):
             """
         self.drag_button = QPushButton("移動")
         self.drag_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.drag_button.setFixedSize(56, 24)
+        self.drag_button.setFixedHeight(24)
         self.drag_button.clicked.connect(self.overlay.toggle_drag_mode)
         self.drag_button.setStyleSheet(button_style)
 
         self.settings_button = QPushButton("設定")
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.settings_button.setFixedSize(56, 24)
+        self.settings_button.setFixedHeight(24)
         self.settings_button.clicked.connect(self.overlay.toggle_settings_window)
         self.settings_button.setStyleSheet(button_style)
 
         self.translation_button = QPushButton("翻譯")
         self.translation_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.translation_button.setFixedSize(56, 24)
+        self.translation_button.setFixedHeight(24)
         self.translation_button.clicked.connect(self.overlay.toggle_translation_window)
         self.translation_button.setStyleSheet(button_style)
 
         self.close_button = QPushButton("關閉")
         self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.close_button.setFixedSize(56, 24)
+        self.close_button.setFixedHeight(24)
         self.close_button.clicked.connect(self.overlay.quit_app)
         self.close_button.setStyleSheet(button_style)
 
@@ -721,6 +850,7 @@ class OverlayControl(QWidget):
         layout.addWidget(self.translation_button)
         layout.addWidget(self.close_button)
         self.apply_button_style("#0F172A")
+        self.update_ui_texts()
 
     def sync_position(self):
         anchor_widget = self.overlay.control_anchor_widget()
@@ -749,7 +879,26 @@ class OverlayControl(QWidget):
         return QRect(target_x, target_y, self.width(), self.height())
 
     def set_drag_enabled(self, enabled):
-        self.drag_button.setText("鎖定" if enabled else "移動")
+        self.drag_button.setText(
+            self.overlay.tr("button_lock") if enabled else self.overlay.tr("button_move")
+        )
+
+    def update_ui_texts(self):
+        self.set_drag_enabled(self.overlay.drag_enabled)
+        self.settings_button.setText(self.overlay.tr("button_settings"))
+        self.translation_button.setText(self.overlay.tr("button_translation"))
+        self.close_button.setText(self.overlay.tr("button_close"))
+        self._update_button_widths()
+
+    def _update_button_widths(self):
+        for button in (
+            self.drag_button,
+            self.settings_button,
+            self.translation_button,
+            self.close_button,
+        ):
+            target_width = max(button.fontMetrics().horizontalAdvance(button.text()) + 20, 56)
+            button.setFixedWidth(target_width)
 
     def apply_button_style(self, color_hex):
         color = QColor(color_hex)
@@ -787,6 +936,7 @@ class OverlaySettingsWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.resize(360, 520)
+        self.setMinimumWidth(420)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -798,17 +948,20 @@ class OverlaySettingsWindow(QWidget):
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
 
+        self.color_label = QLabel()
         self.color_button = QPushButton()
         self.color_button.clicked.connect(self.overlay.pick_text_color)
-        form.addRow("字色", self.color_button)
+        form.addRow(self.color_label, self.color_button)
 
+        self.end_color_label = QLabel()
         self.end_color_button = QPushButton()
         self.end_color_button.clicked.connect(self.overlay.pick_end_text_color)
-        form.addRow("終點色", self.end_color_button)
+        form.addRow(self.end_color_label, self.end_color_button)
 
+        self.button_color_label = QLabel()
         self.button_color_button = QPushButton()
         self.button_color_button.clicked.connect(self.overlay.pick_button_color)
-        form.addRow("按鈕色", self.button_color_button)
+        form.addRow(self.button_color_label, self.button_color_button)
 
         self.main_size = self._build_spinbox(14, 72, self.overlay.update_text_style)
         self.main_translation_size = self._build_spinbox(8, 40, self.overlay.update_text_style)
@@ -824,14 +977,23 @@ class OverlaySettingsWindow(QWidget):
         self.show_subtitle = self._build_checkbox("顯示副歌詞", self.overlay.update_text_style)
         self.show_translation = self._build_checkbox("顯示翻譯", self.overlay.update_text_style)
 
-        form.addRow("主字幕", self.main_size)
-        form.addRow("主翻譯", self.main_translation_size)
-        form.addRow("副字幕", self.subtitle_size)
-        form.addRow("副翻譯", self.subtitle_translation_size)
-        form.addRow("歌名距離", self.gap_song)
-        form.addRow("行距 1", self.gap_primary)
-        form.addRow("行距 2", self.gap_middle)
-        form.addRow("行距 3", self.gap_subtitle)
+        self.main_size_label = QLabel()
+        self.main_translation_size_label = QLabel()
+        self.subtitle_size_label = QLabel()
+        self.subtitle_translation_size_label = QLabel()
+        self.gap_song_label = QLabel()
+        self.gap_primary_label = QLabel()
+        self.gap_middle_label = QLabel()
+        self.gap_subtitle_label = QLabel()
+
+        form.addRow(self.main_size_label, self.main_size)
+        form.addRow(self.main_translation_size_label, self.main_translation_size)
+        form.addRow(self.subtitle_size_label, self.subtitle_size)
+        form.addRow(self.subtitle_translation_size_label, self.subtitle_translation_size)
+        form.addRow(self.gap_song_label, self.gap_song)
+        form.addRow(self.gap_primary_label, self.gap_primary)
+        form.addRow(self.gap_middle_label, self.gap_middle)
+        form.addRow(self.gap_subtitle_label, self.gap_subtitle)
         form.addRow("", self.show_song)
         form.addRow("", self.show_main)
         form.addRow("", self.show_subtitle)
@@ -844,15 +1006,30 @@ class OverlaySettingsWindow(QWidget):
         spotify_form.setHorizontalSpacing(10)
         spotify_form.setVerticalSpacing(8)
 
+        self.spotify_client_id_label = QLabel()
+        self.spotify_client_secret_label = QLabel()
+        self.spotify_redirect_uri_label = QLabel()
+
         self.spotify_client_id = QLineEdit()
         self.spotify_client_secret = QLineEdit()
         self.spotify_client_secret.setEchoMode(QLineEdit.EchoMode.Password)
         self.spotify_redirect_uri = QLineEdit()
 
-        spotify_form.addRow("Client ID", self.spotify_client_id)
-        spotify_form.addRow("Client Secret", self.spotify_client_secret)
-        spotify_form.addRow("Redirect URI", self.spotify_redirect_uri)
+        spotify_form.addRow(self.spotify_client_id_label, self.spotify_client_id)
+        spotify_form.addRow(self.spotify_client_secret_label, self.spotify_client_secret)
+        spotify_form.addRow(self.spotify_redirect_uri_label, self.spotify_redirect_uri)
         layout.addLayout(spotify_form)
+
+        self.language_button = QPushButton()
+        self.language_button.clicked.connect(self.overlay.toggle_language)
+        self.language_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
+        language_row = QHBoxLayout()
+        language_row.setContentsMargins(0, 0, 0, 0)
+        language_row.addWidget(self.language_button)
+        language_row.addStretch(1)
+        layout.addLayout(language_row)
 
         self.spotify_save_button = QPushButton("儲存 Spotify Key")
         self.spotify_save_button.clicked.connect(self.overlay.save_spotify_settings)
@@ -866,6 +1043,7 @@ class OverlaySettingsWindow(QWidget):
         self.spotify_status_label.setWordWrap(True)
         self.spotify_status_label.setStyleSheet("color: rgba(148, 163, 184, 0.9); font-size: 12px;")
         layout.addWidget(self.spotify_status_label)
+        self.update_ui_texts()
 
     def _build_spinbox(self, minimum, maximum, on_change):
         spinbox = QSpinBox()
@@ -938,6 +1116,36 @@ class OverlaySettingsWindow(QWidget):
         self.spotify_status_label.setStyleSheet(f"color: {color}; font-size: 12px;")
         self.spotify_status_label.setText(message)
 
+    def update_ui_texts(self):
+        self.setWindowTitle(self.overlay.tr("settings_window_title"))
+        self.color_label.setText(self.overlay.tr("field_text_color"))
+        self.end_color_label.setText(self.overlay.tr("field_end_color"))
+        self.button_color_label.setText(self.overlay.tr("field_button_color"))
+        self.main_size_label.setText(self.overlay.tr("field_main_size"))
+        self.main_translation_size_label.setText(self.overlay.tr("field_main_translation_size"))
+        self.subtitle_size_label.setText(self.overlay.tr("field_subtitle_size"))
+        self.subtitle_translation_size_label.setText(self.overlay.tr("field_subtitle_translation_size"))
+        self.gap_song_label.setText(self.overlay.tr("field_gap_song"))
+        self.gap_primary_label.setText(self.overlay.tr("field_gap_primary"))
+        self.gap_middle_label.setText(self.overlay.tr("field_gap_middle"))
+        self.gap_subtitle_label.setText(self.overlay.tr("field_gap_subtitle"))
+        self.show_song.setText(self.overlay.tr("field_show_song"))
+        self.show_main.setText(self.overlay.tr("field_show_main"))
+        self.show_subtitle.setText(self.overlay.tr("field_show_subtitle"))
+        self.show_translation.setText(self.overlay.tr("field_show_translation"))
+        self.spotify_client_id_label.setText(self.overlay.tr("field_client_id"))
+        self.spotify_client_secret_label.setText(self.overlay.tr("field_client_secret"))
+        self.spotify_redirect_uri_label.setText(self.overlay.tr("field_redirect_uri"))
+        self.language_button.setText(self.overlay.tr("button_language"))
+        language_width = self.language_button.fontMetrics().horizontalAdvance(
+            self.language_button.text()
+        )
+        target_width = language_width + 32
+        self.language_button.setMinimumWidth(target_width)
+        self.language_button.setMaximumWidth(target_width)
+        self.spotify_save_button.setText(self.overlay.tr("button_save_spotify"))
+        self.spotify_clear_button.setText(self.overlay.tr("button_clear_spotify"))
+
     def set_color_preview(self, color_hex):
         self._apply_preview_style(self.color_button, color_hex)
 
@@ -986,10 +1194,12 @@ class OverlayTranslationWindow(QWidget):
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
 
+        self.track_name_label = QLabel()
+        self.artist_name_label = QLabel()
         self.track_name_input = QLineEdit()
         self.artist_name_input = QLineEdit()
-        form.addRow("歌名", self.track_name_input)
-        form.addRow("歌手", self.artist_name_input)
+        form.addRow(self.track_name_label, self.track_name_input)
+        form.addRow(self.artist_name_label, self.artist_name_input)
 
         self.hint_label = QLabel("每兩行一組：原文 / 翻譯。開頭重複歌名會自動略過。")
         self.hint_label.setWordWrap(True)
@@ -1024,6 +1234,7 @@ class OverlayTranslationWindow(QWidget):
         layout.addWidget(self.editor)
         layout.addWidget(self.status_label)
         layout.addLayout(button_row)
+        self.update_ui_texts()
 
     def sync_position(self):
         target_x = self.overlay.control_window.x() - self.width() - 12
@@ -1048,12 +1259,24 @@ class OverlayTranslationWindow(QWidget):
             )
             self.editor.blockSignals(False)
 
+    def update_ui_texts(self):
+        self.setWindowTitle(self.overlay.tr("translation_window_title"))
+        self.track_name_label.setText(self.overlay.tr("field_track_name"))
+        self.artist_name_label.setText(self.overlay.tr("field_artist_name"))
+        self.hint_label.setText(self.overlay.tr("translation_hint"))
+        self.apply_button.setText(self.overlay.tr("button_apply"))
+        self.clear_button.setText(self.overlay.tr("button_clear"))
+        self.load_button.setText(self.overlay.tr("button_load"))
+
 
 class LyricsOverlay(QWidget):
 
     def __init__(self):
         super().__init__()
         self.app_settings = load_app_settings()
+        self.ui_language = str(self.app_settings.get("ui_language", "zh")).strip().lower()
+        if self.ui_language not in UI_STRINGS:
+            self.ui_language = "zh"
         self.spotify_settings = resolve_spotify_settings(self.app_settings)
         self.spotify = create_spotify_client(self.spotify_settings)
         self.current_track_id = None
@@ -1101,6 +1324,7 @@ class LyricsOverlay(QWidget):
         self.settings_window = OverlaySettingsWindow(self)
         self.translation_window = OverlayTranslationWindow(self)
         self.settings_window.sync_from_overlay()
+        self.update_ui_texts()
         self.update_text_style()
         self._apply_window_mode()
 
@@ -1150,7 +1374,7 @@ class LyricsOverlay(QWidget):
         self.song_label.setStyleSheet("color: rgba(199, 210, 254, 0.92);")
         self.song_label.setContentsMargins(0, 0, 0, 0)
 
-        self.current_lyric_label = QLabel("Waiting for Spotify playback...")
+        self.current_lyric_label = QLabel(self.tr("spotify_waiting_message"))
         self.current_lyric_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.current_lyric_label.setTextFormat(Qt.TextFormat.RichText)
         self.current_lyric_label.setWordWrap(True)
@@ -1241,7 +1465,7 @@ class LyricsOverlay(QWidget):
 
     def _find_active_lines(self, progress_ms):
         if not self.cached_lyrics:
-            return "No synced lyrics found.", "", "", "", 0.0
+            return self.tr("no_synced_lyrics_found"), "", "", "", 0.0
 
         current_line = "..."
         current_translation = ""
@@ -1311,12 +1535,48 @@ class LyricsOverlay(QWidget):
             return
         self.close()
 
+    def tr(self, key, **kwargs):
+        template = UI_STRINGS.get(self.ui_language, UI_STRINGS["zh"]).get(
+            key, UI_STRINGS["zh"].get(key, key)
+        )
+        return template.format(**kwargs) if kwargs else template
+
+    def toggle_language(self):
+        self.ui_language = "en" if self.ui_language == "zh" else "zh"
+        self.app_settings["ui_language"] = self.ui_language
+        save_app_settings(self.app_settings)
+        self.update_ui_texts()
+
+    def update_ui_texts(self):
+        self.control_window.update_ui_texts()
+        self.settings_window.update_ui_texts()
+        self.translation_window.update_ui_texts()
+
+        if self.spotify is None:
+            self._set_labels(
+                self.tr("spotify_unconfigured_title"),
+                self.tr("spotify_unconfigured_message"),
+                "",
+                "",
+                "",
+                0.0,
+            )
+        elif not self.is_playing and not self.current_track_id:
+            self._set_labels(
+                self.tr("spotify_paused_title"),
+                self.tr("spotify_waiting_message"),
+                "",
+                "",
+                "",
+                0.0,
+            )
+
     def save_spotify_settings(self):
         client_id = self.settings_window.spotify_client_id.text().strip()
         client_secret = self.settings_window.spotify_client_secret.text().strip()
         redirect_uri = self.settings_window.spotify_redirect_uri.text().strip()
         if not client_id or not client_secret or not redirect_uri:
-            self.settings_window.set_spotify_status("Spotify key 不可留空。", error=True)
+            self.settings_window.set_spotify_status(self.tr("spotify_key_empty"), error=True)
             return
 
         previous_settings = dict(self.spotify_settings)
@@ -1336,15 +1596,17 @@ class LyricsOverlay(QWidget):
             self.spotify = create_spotify_client(self.spotify_settings)
             if self.spotify is None:
                 self.settings_window.set_spotify_status(
-                    "請填入 Spotify Client ID、Client Secret 和 Redirect URI。",
+                    self.tr("spotify_key_prompt"),
                     error=True,
                 )
                 return
             self.current_track_id = None
-            self.settings_window.set_spotify_status("Spotify key 已儲存，之後會一直保留。")
+            self.settings_window.set_spotify_status(self.tr("spotify_key_saved"))
         except Exception as exc:
             self.spotify = None
-            self.settings_window.set_spotify_status(f"儲存失敗：{exc}", error=True)
+            self.settings_window.set_spotify_status(
+                self.tr("spotify_save_failed", error=exc), error=True
+            )
 
     def clear_spotify_settings(self):
         self.app_settings.pop("spotify_client_id", None)
@@ -1362,7 +1624,8 @@ class LyricsOverlay(QWidget):
         self.settings_window.spotify_client_id.clear()
         self.settings_window.spotify_client_secret.clear()
         self.settings_window.spotify_redirect_uri.setText(DEFAULT_REDIRECT_URI)
-        self.settings_window.set_spotify_status("Spotify key 已清除。")
+        self.settings_window.set_spotify_status(self.tr("spotify_key_cleared"))
+        self.update_ui_texts()
 
     def toggle_settings_window(self):
         if self.settings_window.isVisible():
@@ -1420,7 +1683,7 @@ class LyricsOverlay(QWidget):
         selected_color = QColorDialog.getColor(
             QColor(self.text_style["text_color"]),
             self.settings_window,
-            "選擇字幕顏色",
+            self.tr("dialog_pick_text_color"),
         )
         if not selected_color.isValid():
             return
@@ -1433,7 +1696,7 @@ class LyricsOverlay(QWidget):
         selected_color = QColorDialog.getColor(
             QColor(self.text_style["accent_color"]),
             self.settings_window,
-            "選擇主字幕終點色",
+            self.tr("dialog_pick_end_color"),
         )
         if not selected_color.isValid():
             return
@@ -1446,7 +1709,7 @@ class LyricsOverlay(QWidget):
         selected_color = QColorDialog.getColor(
             QColor(self.text_style["button_color"]),
             self.settings_window,
-            "選擇按鈕顏色",
+            self.tr("dialog_pick_button_color"),
         )
         if not selected_color.isValid():
             return
@@ -1607,21 +1870,21 @@ class LyricsOverlay(QWidget):
     def load_translation_for_inputs(self):
         storage_key, track_name, artist_name = self._translation_inputs_to_key()
         if not storage_key:
-            self.translation_window.set_status("請先輸入歌名。", error=True)
+            self.translation_window.set_status(self.tr("translation_enter_song_name"), error=True)
             return
 
         content = self.translation_content_for_key(storage_key)
         self.translation_window.editor.setPlainText(content)
         if content:
-            self.translation_window.set_status("已載入已儲存的翻譯。")
+            self.translation_window.set_status(self.tr("translation_loaded"))
         else:
-            self.translation_window.set_status("這首歌目前沒有已儲存的翻譯。")
+            self.translation_window.set_status(self.tr("translation_not_found"))
 
     def apply_manual_translations(self):
         storage_key, track_name, artist_name = self._translation_inputs_to_key()
         raw_text = self.translation_window.editor.toPlainText().strip()
         if not storage_key:
-            self.translation_window.set_status("請先輸入歌名。", error=True)
+            self.translation_window.set_status(self.tr("translation_enter_song_name"), error=True)
             return
 
         if not raw_text:
@@ -1630,14 +1893,14 @@ class LyricsOverlay(QWidget):
             if storage_key == self.current_track_key:
                 self.cached_lyrics = self._build_cached_lyrics(self.base_lyrics)
                 self.animate_current_line()
-            self.translation_window.set_status("已清空這首歌的手動翻譯。")
+            self.translation_window.set_status(self.tr("translation_cleared_current"))
             return
 
         translation_pairs = parse_manual_translation_block(
             raw_text, f"{track_name} - {artist_name}"
         )
         if not translation_pairs:
-            self.translation_window.set_status("格式不對，請用原文 / 翻譯成對貼上。", error=True)
+            self.translation_window.set_status(self.tr("translation_format_invalid"), error=True)
             return
 
         self.manual_translation_inputs[storage_key] = {
@@ -1650,16 +1913,18 @@ class LyricsOverlay(QWidget):
         if storage_key == self.current_track_key:
             self.cached_lyrics = self._build_cached_lyrics(self.base_lyrics)
             matched_count = sum(1 for lyric in self.cached_lyrics if lyric.get("translation"))
-            self.translation_window.set_status(f"已儲存並套用 {matched_count} 行翻譯。")
+            self.translation_window.set_status(
+                self.tr("translation_saved_applied", count=matched_count)
+            )
             self.animate_current_line()
             return
 
-        self.translation_window.set_status("已儲存到 JSON，播放到這首歌時會自動套用。")
+        self.translation_window.set_status(self.tr("translation_saved_json"))
 
     def clear_manual_translations(self):
         storage_key, track_name, artist_name = self._translation_inputs_to_key()
         if not storage_key:
-            self.translation_window.set_status("請先輸入歌名。", error=True)
+            self.translation_window.set_status(self.tr("translation_enter_song_name"), error=True)
             return
 
         self.manual_translation_inputs.pop(storage_key, None)
@@ -1668,7 +1933,7 @@ class LyricsOverlay(QWidget):
         if storage_key == self.current_track_key:
             self.cached_lyrics = self._build_cached_lyrics(self.base_lyrics)
             self.animate_current_line()
-        self.translation_window.set_status("已刪除這首歌的 JSON 翻譯。")
+        self.translation_window.set_status(self.tr("translation_deleted_json"))
 
     def _set_labels(
         self,
@@ -1713,8 +1978,8 @@ class LyricsOverlay(QWidget):
                 self.base_lyrics = []
                 self.cached_lyrics = []
                 self._set_labels(
-                    "Spotify 未設定",
-                    "Open 設定 and add Spotify Client ID / Secret",
+                    self.tr("spotify_unconfigured_title"),
+                    self.tr("spotify_unconfigured_message"),
                     "",
                     "",
                     "",
@@ -1732,8 +1997,8 @@ class LyricsOverlay(QWidget):
                 self.base_lyrics = []
                 self.cached_lyrics = []
                 self._set_labels(
-                    "Spotify paused",
-                    "Waiting for Spotify playback...",
+                    self.tr("spotify_paused_title"),
+                    self.tr("spotify_waiting_message"),
                     "",
                     "",
                     "",
@@ -1744,7 +2009,14 @@ class LyricsOverlay(QWidget):
             item = track_info.get("item")
             if not item:
                 self.is_playing = False
-                self._set_labels("Spotify", "Unable to read current track.", "", "", "", 0.0)
+                self._set_labels(
+                    self.tr("spotify_unable_title"),
+                    self.tr("spotify_unable_message"),
+                    "",
+                    "",
+                    "",
+                    0.0,
+                )
                 return
 
             track_id = item["id"]
@@ -1782,15 +2054,22 @@ class LyricsOverlay(QWidget):
             self.base_lyrics = []
             self.cached_lyrics = []
             self._set_labels(
-                "Spotify Key Error",
-                "請到設定填入 Spotify Client ID / Secret / Redirect URI",
+                self.tr("spotify_key_error_title"),
+                self.tr("spotify_key_error_message"),
                 "",
                 "",
                 "",
                 0.0,
             )
         except Exception as exc:
-            self._set_labels("Spotify Error", f"Error: {exc}", "", "", "", 0.0)
+            self._set_labels(
+                self.tr("spotify_error_title"),
+                self.tr("spotify_error_message", error=exc),
+                "",
+                "",
+                "",
+                0.0,
+            )
 
     def closeEvent(self, event):
         if hasattr(self, "control_window"):

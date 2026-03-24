@@ -1,10 +1,14 @@
 # Spotify Floating Overlay
 
+> Note: You need a Spotify Premium account to use the Web API.
+
 [中文](#中文說明) | [English](#english)
 
 ## 中文說明
 
 Spotify 的透明浮動歌詞視窗，使用 Python 與 PySide6 製作。
+
+![Main Preview](img/main.png)
 
 功能：
 
@@ -47,11 +51,25 @@ python mac.py
 
 ### Spotify 設定
 
-請先到 Spotify Developer Dashboard 建立 app，`Redirect URI` 可用：
+請先到 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) 建立 app，`Redirect URI` 可用：
 
 ```text
 http://127.0.0.1:8888/callback
 ```
+
+取得 Spotify key 的流程：
+
+1. 建立 app
+
+![Create App](img/1.create%20app.png)
+
+2. 設定 Redirect URI
+
+![Redirect URI](img/2.Redirect%20URIs.png)
+
+3. 取得 `Client ID` 和 `Client Secret`
+
+![Get Your Key](img/3.get%20your%20key.png)
 
 本機設定會儲存在：
 
@@ -107,6 +125,8 @@ sudo xcodebuild -license accept
 
 A transparent always-on-top Spotify lyrics overlay built with Python and PySide6.
 
+![Main Preview](img/main.png)
+
 Features:
 
 - fetches synced lyrics from `lrclib`
@@ -147,11 +167,25 @@ These values are stored locally on your machine.
 
 ### Spotify Setup
 
-Create an app in the Spotify Developer Dashboard and use a redirect URI such as:
+Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and use a redirect URI such as:
 
 ```text
 http://127.0.0.1:8888/callback
 ```
+
+How to get your Spotify key:
+
+1. Create an app
+
+![Create App](img/1.create%20app.png)
+
+2. Add the Redirect URI
+
+![Redirect URI](img/2.Redirect%20URIs.png)
+
+3. Copy `Client ID` and `Client Secret`
+
+![Get Your Key](img/3.get%20your%20key.png)
 
 Local app data is stored in:
 
