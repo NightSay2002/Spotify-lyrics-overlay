@@ -1,0 +1,13 @@
+.DS_Store
+.vscode/
+__pycache__/
+*.pyc
+
+venv/
+.venv/
+
+build/
+dist/
+*.spec
+
+manual_translations.json
