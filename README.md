@@ -12,7 +12,8 @@ Spotify 的透明浮動歌詞視窗，使用 Python 與 PySide6 製作。
 
 功能：
 
-- 從 `lrclib` 抓同步歌詞
+- 主歌詞來源順序：`網易雲 API` → `lrclib`
+- 外語歌可自動抓翻譯字幕
 - 透明、置頂顯示
 - 主歌詞逐字變色動畫
 - 可手動輸入翻譯字幕並儲存成 JSON
@@ -49,6 +50,8 @@ python mac.py
 
 這些資料只會存在你的本機。
 
+執行 `python mac.py` 時，程式也會自動在背景啟動內建的網易雲第三方 API，不需要另外手動跑 `node app.js`。
+
 ### Spotify 設定
 
 請先到 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) 建立 app，`Redirect URI` 可用：
@@ -84,6 +87,13 @@ http://127.0.0.1:8888/callback
 
 程式會自動把你輸入的翻譯行配對到同步歌詞，即使空格、標點有一點差異也會盡量對齊。
 
+如果 `lrclib` 或網易雲把一句歌詞拆成兩行到三行，程式也會嘗試把這幾行合併後去對齊同一條翻譯。
+
+翻譯優先序：
+
+- 有手動翻譯：直接使用手動翻譯
+- 沒有手動翻譯：使用網易雲翻譯
+
 ### 打包成 macOS App
 
 如果你要打包 `.app`，保留：
@@ -96,6 +106,13 @@ http://127.0.0.1:8888/callback
 ./build_mac_app.sh
 ```
 
+打包後的 `.app` 會包含：
+
+- `node-runtime`
+- `api-enhanced`
+
+所以直接打開 app 就會自動在背景啟動本地 `8998` API，不需要另外安裝或手動啟動 Node 服務。
+
 如果 macOS 因為 Xcode tools 擋住打包，先執行：
 
 ```bash
@@ -106,7 +123,7 @@ sudo xcodebuild -license accept
 
 - repo 內沒有內建 Spotify key
 - 個人設定檔不放在專案資料夾內
-- 目前只使用 `lrclib` 當歌詞來源
+- 目前歌詞來源會先查網易雲，再回退到 `lrclib`
 
 ---
 
@@ -118,7 +135,8 @@ A transparent always-on-top Spotify lyrics overlay built with Python and PySide6
 
 Features:
 
-- fetches synced lyrics from `lrclib`
+- primary synced lyrics source order: `Netease API` → `lrclib`
+- auto-fetches translation subtitles for non-Chinese songs
 - transparent floating overlay
 - per-character lyric color fill animation
 - manual translation subtitles saved as JSON
@@ -153,6 +171,8 @@ On first launch, open the floating `設定` window and fill in:
 - `Redirect URI`
 
 These values are stored locally on your machine.
+
+When you run `python mac.py`, the app also starts the bundled Netease local API in the background automatically. You do not need to run `node app.js` yourself.
 
 ### Spotify Setup
 
@@ -189,6 +209,13 @@ Translated line
 
 The app will try to align your manual translation lines to the synced lyrics even if spacing or punctuation differs slightly.
 
+If a lyrics source splits one sentence into two or three lines, the app will also try to match those combined lines to a single translation line.
+
+Translation priority:
+
+- if a manual translation exists, it is used first
+- otherwise, the app uses the Netease translation
+
 ### Build A macOS App
 
 If you want to build a `.app`, keep:
@@ -201,6 +228,13 @@ Then run:
 ./build_mac_app.sh
 ```
 
+The built `.app` includes:
+
+- `node-runtime`
+- `api-enhanced`
+
+So opening the app will automatically start the local `8998` API in the background without a separate Node setup.
+
 If macOS blocks the build because of Xcode tools, run:
 
 ```bash
@@ -211,4 +245,4 @@ sudo xcodebuild -license accept
 
 - No Spotify keys are included in this repo
 - Personal settings are stored outside the project folder
-- `lrclib` is currently the only lyrics source
+- Lyrics are looked up from Netease first, then fall back to `lrclib`

@@ -3,12 +3,15 @@ import json
 import os
 import platform
 import re
+import shutil
+import subprocess
 import sys
+import tarfile
 import time
 import traceback
 import unicodedata
 from difflib import SequenceMatcher
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 import spotipy
@@ -51,6 +54,7 @@ if platform.system() == "Darwin":
 DEFAULT_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
 DEFAULT_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 DEFAULT_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
+DEFAULT_NETEASE_API_BASE_URL = os.getenv("NETEASE_API_BASE_URL", "http://localhost:8998")
 SCOPE = "user-read-currently-playing"
 APP_NAME = "Spotify Floating Overlay"
 
@@ -322,6 +326,12 @@ LEGACY_MANUAL_TRANSLATIONS_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "manual_translations.json"
 )
 SPOTIFY_CACHE_PATH = os.path.join(APP_DATA_DIR, ".spotify_token_cache")
+NETEASE_API_LOG_PATH = os.path.join(APP_DATA_DIR, "api-enhanced.log")
+NETEASE_API_ARCHIVE_NAME = "api-enhanced.tar.gz"
+NETEASE_API_RUNTIME_DIR = os.path.join(APP_DATA_DIR, "api-enhanced-runtime")
+NODE_RUNTIME_NAME = "node-runtime"
+_NETEASE_API_PROCESS = None
+_NETEASE_API_LOG_FILE = None
 
 
 def load_app_settings():
@@ -340,6 +350,176 @@ def load_app_settings():
 def save_app_settings(settings):
     with open(APP_SETTINGS_PATH, "w", encoding="utf-8") as file:
         json.dump(settings, file, ensure_ascii=False, indent=2)
+
+
+def get_runtime_root():
+    if getattr(sys, "frozen", False):
+        return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _extract_netease_api_archive(archive_path):
+    if not archive_path or not os.path.isfile(archive_path):
+        return ""
+
+    stamp = f"{os.path.getsize(archive_path)}:{int(os.path.getmtime(archive_path))}"
+    stamp_path = os.path.join(NETEASE_API_RUNTIME_DIR, ".bundle_stamp")
+    extracted_dir = os.path.join(NETEASE_API_RUNTIME_DIR, "api-enhanced")
+
+    if os.path.isfile(os.path.join(extracted_dir, "app.js")) and os.path.exists(stamp_path):
+        try:
+            with open(stamp_path, "r", encoding="utf-8") as file:
+                if safe_strip(file.read()) == stamp:
+                    return extracted_dir
+        except OSError:
+            pass
+
+    shutil.rmtree(NETEASE_API_RUNTIME_DIR, ignore_errors=True)
+    os.makedirs(NETEASE_API_RUNTIME_DIR, exist_ok=True)
+    try:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            archive.extractall(NETEASE_API_RUNTIME_DIR)
+        for current_root, dir_names, file_names in os.walk(NETEASE_API_RUNTIME_DIR):
+            for dir_name in list(dir_names):
+                if dir_name.startswith("._"):
+                    shutil.rmtree(os.path.join(current_root, dir_name), ignore_errors=True)
+                    dir_names.remove(dir_name)
+            for file_name in file_names:
+                if file_name.startswith("._"):
+                    try:
+                        os.remove(os.path.join(current_root, file_name))
+                    except OSError:
+                        pass
+        with open(stamp_path, "w", encoding="utf-8") as file:
+            file.write(stamp)
+    except (OSError, tarfile.TarError) as exc:
+        log_warning("Failed to extract bundled api-enhanced.", exc)
+        shutil.rmtree(NETEASE_API_RUNTIME_DIR, ignore_errors=True)
+        return ""
+
+    if os.path.isfile(os.path.join(extracted_dir, "app.js")):
+        return extracted_dir
+    return ""
+
+
+def resolve_netease_api_dir():
+    candidates = [
+        safe_strip(os.getenv("API_ENHANCED_DIR")),
+        os.path.join(get_runtime_root(), "api-enhanced"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "api-enhanced"),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(os.path.join(candidate, "app.js")):
+            return candidate
+
+    archive_candidates = [
+        os.path.join(get_runtime_root(), NETEASE_API_ARCHIVE_NAME),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), NETEASE_API_ARCHIVE_NAME),
+    ]
+    for archive_path in archive_candidates:
+        extracted_dir = _extract_netease_api_archive(archive_path)
+        if extracted_dir:
+            return extracted_dir
+    return ""
+
+
+def resolve_node_bin():
+    candidates = [
+        safe_strip(os.getenv("NODE_BIN")),
+        os.path.join(get_runtime_root(), NODE_RUNTIME_NAME),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), NODE_RUNTIME_NAME),
+        safe_strip(shutil.which("node")),
+    ]
+    for candidate in candidates:
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        try:
+            if not os.access(candidate, os.X_OK):
+                os.chmod(candidate, 0o755)
+        except OSError:
+            pass
+        if os.access(candidate, os.X_OK):
+            return candidate
+    return ""
+
+
+def is_netease_api_running():
+    try:
+        requests.get(DEFAULT_NETEASE_API_BASE_URL, timeout=1, headers=REQUEST_HEADERS)
+        return True
+    except requests.RequestException:
+        return False
+
+
+def start_netease_api_if_needed():
+    global _NETEASE_API_PROCESS, _NETEASE_API_LOG_FILE
+
+    if is_netease_api_running():
+        return
+
+    if _NETEASE_API_PROCESS is not None and _NETEASE_API_PROCESS.poll() is None:
+        return
+
+    api_dir = resolve_netease_api_dir()
+    if not api_dir:
+        log_warning("api-enhanced directory not found. Netease fallback will stay disabled.")
+        return
+
+    node_bin = resolve_node_bin()
+    if not node_bin:
+        log_warning("Node.js runtime not found. api-enhanced could not be started.")
+        return
+
+    app_js_path = os.path.join(api_dir, "app.js")
+    if not os.path.isfile(app_js_path):
+        log_warning("api-enhanced app.js not found. Netease fallback will stay disabled.")
+        return
+
+    try:
+        api_url = urlparse(DEFAULT_NETEASE_API_BASE_URL)
+        api_port = str(api_url.port or 8998)
+        process_env = os.environ.copy()
+        process_env["PORT"] = api_port
+        _NETEASE_API_LOG_FILE = open(NETEASE_API_LOG_PATH, "a", encoding="utf-8")
+        _NETEASE_API_PROCESS = subprocess.Popen(
+            [node_bin, "app.js"],
+            cwd=api_dir,
+            stdout=_NETEASE_API_LOG_FILE,
+            stderr=subprocess.STDOUT,
+            env=process_env,
+        )
+    except Exception as exc:
+        log_warning("Failed to start api-enhanced.", exc)
+        _NETEASE_API_PROCESS = None
+        if _NETEASE_API_LOG_FILE is not None:
+            _NETEASE_API_LOG_FILE.close()
+            _NETEASE_API_LOG_FILE = None
+        return
+
+    for _ in range(20):
+        if is_netease_api_running():
+            return
+        if _NETEASE_API_PROCESS.poll() is not None:
+            break
+        time.sleep(0.25)
+
+    log_warning("api-enhanced did not become ready in time. Check api-enhanced.log for details.")
+
+
+def stop_netease_api_if_needed():
+    global _NETEASE_API_PROCESS, _NETEASE_API_LOG_FILE
+
+    if _NETEASE_API_PROCESS is not None and _NETEASE_API_PROCESS.poll() is None:
+        _NETEASE_API_PROCESS.terminate()
+        try:
+            _NETEASE_API_PROCESS.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _NETEASE_API_PROCESS.kill()
+
+    _NETEASE_API_PROCESS = None
+    if _NETEASE_API_LOG_FILE is not None:
+        _NETEASE_API_LOG_FILE.close()
+        _NETEASE_API_LOG_FILE = None
 
 
 def resolve_spotify_settings(settings=None):
@@ -517,6 +697,192 @@ def similarity_score(left, right):
     return SequenceMatcher(None, left, right).ratio()
 
 
+def build_translation_block(translation_pairs):
+    lines = []
+    for pair in translation_pairs:
+        original_text = safe_strip((pair or {}).get("original"))
+        translation_text = safe_strip((pair or {}).get("translation"))
+        if not original_text or not translation_text:
+            continue
+        lines.extend((original_text, translation_text))
+    return "\n".join(lines)
+
+
+def align_translation_lrc_by_time(original_lrc, translated_lrc):
+    original_lines = parse_lrc(original_lrc)
+    translated_lines = parse_lrc(translated_lrc)
+    if not original_lines or not translated_lines:
+        return []
+
+    translated_by_time = {
+        line["time"]: safe_strip(line.get("text"))
+        for line in translated_lines
+        if safe_strip(line.get("text"))
+    }
+    translation_pairs = []
+    for line in original_lines:
+        original_text = safe_strip(line.get("text"))
+        translation_text = translated_by_time.get(line["time"], "")
+        if not original_text or not translation_text:
+            continue
+        translation_pairs.append(
+            {
+                "original": original_text,
+                "normalized_original": normalize_text(original_text),
+                "translation": translation_text,
+            }
+        )
+    return translation_pairs
+
+
+def split_netease_merged_lrc(merged_lrc):
+    if not merged_lrc:
+        return "", []
+
+    line_pattern = re.compile(r"\[\d+:\d+(?:\.\d+)?\]")
+    original_lines = []
+    translation_pairs = []
+
+    for raw_line in merged_lrc.splitlines():
+        timestamps = line_pattern.findall(raw_line)
+        if not timestamps:
+            continue
+
+        merged_text = safe_strip(line_pattern.sub("", raw_line))
+        original_text = merged_text
+        translation_text = ""
+        if " / " in merged_text:
+            original_text, translation_text = [
+                safe_strip(part) for part in merged_text.split(" / ", 1)
+            ]
+
+        original_lines.append("".join(timestamps) + original_text)
+        if original_text and translation_text:
+            translation_pairs.append(
+                {
+                    "original": original_text,
+                    "normalized_original": normalize_text(original_text),
+                    "translation": translation_text,
+                }
+            )
+
+    return "\n".join(original_lines), translation_pairs
+
+
+def _netease_song_score(song, track_name, artist_name, duration_ms=0):
+    song_name = safe_strip(song.get("name"))
+    artists = song.get("ar") or song.get("artists") or []
+    artist_names = [
+        safe_strip(artist.get("name"))
+        for artist in artists
+        if isinstance(artist, dict) and safe_strip(artist.get("name"))
+    ]
+    song_artist = ", ".join(artist_names)
+
+    target_title = normalize_text(track_name)
+    target_artist = normalize_text(artist_name)
+    song_title = normalize_text(song_name)
+    song_artist_norm = normalize_text(song_artist)
+
+    score = similarity_score(target_title, song_title) * 3
+    score += similarity_score(target_artist, song_artist_norm) * 2
+
+    if target_title and target_title == song_title:
+        score += 2
+    elif target_title and target_title in song_title:
+        score += 1
+
+    if target_artist and target_artist == song_artist_norm:
+        score += 1.5
+    elif target_artist and target_artist in song_artist_norm:
+        score += 0.8
+
+    song_duration_ms = int(song.get("dt") or song.get("duration") or 0)
+    if duration_ms > 0 and song_duration_ms > 0:
+        duration_gap = abs(song_duration_ms - duration_ms)
+        if duration_gap <= 2000:
+            score += 1.5
+        elif duration_gap <= 5000:
+            score += 0.5
+        else:
+            score -= min(duration_gap / 10000, 2.0)
+
+    return score
+
+
+def search_netease_song_id(track_name, artist_name, duration_ms=0):
+    if not safe_strip(track_name):
+        return None
+
+    keywords = safe_strip(f"{track_name} {artist_name}") or safe_strip(track_name)
+    best_song = None
+    best_score = 0.0
+
+    for endpoint in ("cloudsearch", "search"):
+        try:
+            response = requests.get(
+                f"{DEFAULT_NETEASE_API_BASE_URL}/{endpoint}",
+                params={"keywords": keywords, "type": 1, "limit": 10},
+                timeout=5,
+                headers=REQUEST_HEADERS,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            continue
+
+        songs = ((payload or {}).get("result") or {}).get("songs") or []
+        for song in songs:
+            if not isinstance(song, dict):
+                continue
+
+            score = _netease_song_score(song, track_name, artist_name, duration_ms)
+            if score > best_score:
+                best_score = score
+                best_song = song
+
+        if best_song and best_score >= 3.5:
+            break
+
+    if not best_song or best_score < 3.0:
+        return None
+
+    return best_song.get("id")
+
+
+def get_netease_lyrics_bundle(track_name, artist_name, duration_ms=0):
+    song_id = search_netease_song_id(track_name, artist_name, duration_ms)
+    if not song_id:
+        return {"synced_lyrics": "", "translation_pairs": []}
+
+    try:
+        response = requests.get(
+            f"{DEFAULT_NETEASE_API_BASE_URL}/lyric",
+            params={"id": song_id, "conver": 3},
+            timeout=5,
+            headers=REQUEST_HEADERS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError):
+        return {"synced_lyrics": "", "translation_pairs": []}
+
+    merged_lrc = safe_strip(((payload or {}).get("lrc") or {}).get("lyric"))
+    translated_lrc = safe_strip(((payload or {}).get("tlyric") or {}).get("lyric"))
+    synced_lyrics, translation_pairs = split_netease_merged_lrc(merged_lrc)
+
+    if not synced_lyrics:
+        synced_lyrics = merged_lrc
+
+    if not translation_pairs and translated_lrc:
+        translation_pairs = align_translation_lrc_by_time(synced_lyrics, translated_lrc)
+
+    return {
+        "synced_lyrics": synced_lyrics,
+        "translation_pairs": translation_pairs,
+    }
+
+
 def translation_match_score(left, right):
     left_normalized = normalize_text(left)
     right_normalized = normalize_text(right)
@@ -646,6 +1012,16 @@ def fetch_mojigeci_translations(track_name, artist_name):
     return translation_pairs
 
 
+def _combined_lyric_text(lyrics_data, start_index, span_length):
+    combined_parts = []
+    end_index = min(start_index + span_length, len(lyrics_data))
+    for index in range(start_index, end_index):
+        text = safe_strip((lyrics_data[index] or {}).get("text"))
+        if text:
+            combined_parts.append(text)
+    return "".join(combined_parts)
+
+
 def align_translations_to_lyrics(lyrics_data, translation_pairs):
     if not lyrics_data:
         return []
@@ -657,36 +1033,54 @@ def align_translations_to_lyrics(lyrics_data, translation_pairs):
     pair_index = 0
     window_size = 20
 
-    for lyric in aligned_lyrics:
+    lyric_index = 0
+
+    while lyric_index < len(aligned_lyrics):
+        lyric = aligned_lyrics[lyric_index]
         lyric_text = safe_strip(lyric.get("text"))
         normalized_lyric = normalize_text(lyric_text)
         if not normalized_lyric:
+            lyric_index += 1
             continue
 
         best_match_index = None
         best_match_score = 0.0
+        best_span_length = 1
         search_end = min(pair_index + window_size, len(translation_pairs))
 
-        for index in range(pair_index, search_end):
-            candidate = translation_pairs[index]
-            score = translation_match_score(normalized_lyric, candidate["normalized_original"])
-            if score > best_match_score:
-                best_match_index = index
-                best_match_score = score
-
-        if best_match_index is None or best_match_score < 0.6:
-            for index in range(pair_index, len(translation_pairs)):
+        def consider_matches(start_index, end_index):
+            nonlocal best_match_index, best_match_score, best_span_length
+            for index in range(start_index, end_index):
                 candidate = translation_pairs[index]
-                score = translation_match_score(normalized_lyric, candidate["normalized_original"])
-                if score > best_match_score:
-                    best_match_index = index
-                    best_match_score = score
+                candidate_original = candidate["normalized_original"]
+                if not candidate_original:
+                    continue
+                for span_length in range(1, 4):
+                    combined_text = _combined_lyric_text(aligned_lyrics, lyric_index, span_length)
+                    if not combined_text:
+                        continue
+                    score = translation_match_score(combined_text, candidate_original)
+                    if score > best_match_score or (
+                        abs(score - best_match_score) < 1e-6 and span_length > best_span_length
+                    ):
+                        best_match_index = index
+                        best_match_score = score
+                        best_span_length = span_length
 
-        if best_match_index is None or best_match_score < 0.56:
+        consider_matches(pair_index, search_end)
+        if best_match_index is None or best_match_score < 0.72:
+            consider_matches(pair_index, len(translation_pairs))
+
+        if best_match_index is None or best_match_score < 0.62:
+            lyric_index += 1
             continue
 
-        lyric["translation"] = translation_pairs[best_match_index]["translation"]
+        translation_text = translation_pairs[best_match_index]["translation"]
+        span_end = min(lyric_index + best_span_length, len(aligned_lyrics))
+        for index in range(lyric_index, span_end):
+            aligned_lyrics[index]["translation"] = translation_text
         pair_index = best_match_index + 1
+        lyric_index = span_end
 
     return aligned_lyrics
 
@@ -748,16 +1142,18 @@ def load_manual_translation_inputs():
     for key, value in data.items():
         if not isinstance(value, dict):
             continue
-        track_name = str(value.get("track_name", "")).strip()
-        artist_name = str(value.get("artist_name", "")).strip()
-        content = str(value.get("content", "")).strip()
-        if not track_name or not content:
+        track_name = safe_strip(value.get("track_name"))
+        artist_name = safe_strip(value.get("artist_name"))
+        content = safe_strip(value.get("content"))
+        synced_lyrics = safe_strip(value.get("synced_lyrics"))
+        if not track_name or (not content and not synced_lyrics):
             continue
         normalized_key = key or build_translation_key(track_name, artist_name)
         normalized_data[normalized_key] = {
             "track_name": track_name,
             "artist_name": artist_name,
             "content": content,
+            "synced_lyrics": synced_lyrics,
         }
 
     return normalized_data
@@ -768,15 +1164,17 @@ def save_manual_translation_inputs(manual_translation_inputs):
     for key, value in manual_translation_inputs.items():
         if not isinstance(value, dict):
             continue
-        track_name = str(value.get("track_name", "")).strip()
-        artist_name = str(value.get("artist_name", "")).strip()
-        content = str(value.get("content", "")).strip()
-        if not track_name or not content:
+        track_name = safe_strip(value.get("track_name"))
+        artist_name = safe_strip(value.get("artist_name"))
+        content = safe_strip(value.get("content"))
+        synced_lyrics = safe_strip(value.get("synced_lyrics"))
+        if not track_name or (not content and not synced_lyrics):
             continue
         payload[key] = {
             "track_name": track_name,
             "artist_name": artist_name,
             "content": content,
+            "synced_lyrics": synced_lyrics,
         }
 
     with open(MANUAL_TRANSLATIONS_PATH, "w", encoding="utf-8") as file:
@@ -1860,6 +2258,34 @@ class LyricsOverlay(QWidget):
         entry = self.manual_translation_inputs.get(storage_key) or {}
         return entry.get("content", "")
 
+    def synced_lyrics_for_key(self, storage_key):
+        entry = self.manual_translation_inputs.get(storage_key) or {}
+        return safe_strip(entry.get("synced_lyrics"))
+
+    def cache_netease_lyrics_bundle(self, track_name, artist_name, synced_lyrics, translation_pairs):
+        storage_key = build_translation_key(track_name, artist_name)
+        existing_entry = dict(self.manual_translation_inputs.get(storage_key) or {})
+        updated_entry = {
+            "track_name": track_name,
+            "artist_name": artist_name,
+            "content": safe_strip(existing_entry.get("content")),
+            "synced_lyrics": safe_strip(synced_lyrics),
+        }
+
+        if not updated_entry["content"] and translation_pairs:
+            updated_entry["content"] = build_translation_block(translation_pairs)
+
+        if (
+            existing_entry.get("track_name") == updated_entry["track_name"]
+            and existing_entry.get("artist_name") == updated_entry["artist_name"]
+            and safe_strip(existing_entry.get("content")) == updated_entry["content"]
+            and safe_strip(existing_entry.get("synced_lyrics")) == updated_entry["synced_lyrics"]
+        ):
+            return
+
+        self.manual_translation_inputs[storage_key] = updated_entry
+        save_manual_translation_inputs(self.manual_translation_inputs)
+
     def _manual_translation_pairs_for_current(self):
         raw_text = self.translation_content_for_key(self.current_track_key)
         if not raw_text:
@@ -1869,6 +2295,9 @@ class LyricsOverlay(QWidget):
             raw_text, f"{self.current_track_name} - {self.current_track_artist}"
         )
 
+    def has_manual_translation_for_key(self, storage_key):
+        return bool(safe_strip(self.translation_content_for_key(storage_key)))
+
     def _build_cached_lyrics(self, lyrics_data):
         if not lyrics_data:
             return []
@@ -1876,17 +2305,81 @@ class LyricsOverlay(QWidget):
         translation_pairs = self._manual_translation_pairs_for_current()
         return align_translations_to_lyrics(lyrics_data, translation_pairs)
 
-    def _load_track_lyrics(self, track_name, artist_name, duration_ms):
+    def _maybe_cache_netease_translation(self, track_name, artist_name, duration_ms, lyrics_data):
+        if not lyrics_data or detect_chinese_song(lyrics_data):
+            return
+
+        storage_key = build_translation_key(track_name, artist_name)
+        if self.has_manual_translation_for_key(storage_key):
+            return
+
+        existing_synced_lyrics = self.synced_lyrics_for_key(storage_key)
+        if existing_synced_lyrics:
+            return
+
         try:
-            synced_text = get_best_synced_lyrics(track_name, artist_name, duration_ms)
-            lyrics_data = parse_lrc(synced_text)
-            return lyrics_data, self._build_cached_lyrics(lyrics_data)
+            netease_bundle = get_netease_lyrics_bundle(track_name, artist_name, duration_ms)
+            synced_lyrics = safe_strip(netease_bundle.get("synced_lyrics"))
+            translation_pairs = netease_bundle.get("translation_pairs") or []
+            if translation_pairs or synced_lyrics:
+                self.cache_netease_lyrics_bundle(
+                    track_name,
+                    artist_name,
+                    synced_lyrics or existing_synced_lyrics,
+                    translation_pairs,
+                )
         except Exception as exc:
             log_warning(
-                f"Failed to load lyrics for '{track_name}' by '{artist_name}'. Falling back to instrumental.",
+                f"Failed to load Netease translation cache for '{track_name}' by '{artist_name}'.",
                 exc,
             )
-            return [], []
+
+    def _load_track_lyrics(self, track_name, artist_name, duration_ms):
+        storage_key = build_translation_key(track_name, artist_name)
+        try:
+            netease_bundle = get_netease_lyrics_bundle(track_name, artist_name, duration_ms)
+            synced_lyrics = safe_strip(netease_bundle.get("synced_lyrics"))
+            translation_pairs = netease_bundle.get("translation_pairs") or []
+            if synced_lyrics:
+                self.cache_netease_lyrics_bundle(
+                    track_name,
+                    artist_name,
+                    synced_lyrics,
+                    translation_pairs,
+                )
+                lyrics_data = parse_lrc(synced_lyrics)
+                if lyrics_data:
+                    return lyrics_data, self._build_cached_lyrics(lyrics_data)
+        except Exception as exc:
+            log_warning(
+                f"Failed to load Netease primary lyrics for '{track_name}' by '{artist_name}'. Falling back to LRCLIB.",
+                exc,
+            )
+
+        try:
+            synced_text = get_best_synced_lyrics(track_name, artist_name, duration_ms)
+            if synced_text:
+                lyrics_data = parse_lrc(synced_text)
+                if lyrics_data:
+                    self._maybe_cache_netease_translation(
+                        track_name,
+                        artist_name,
+                        duration_ms,
+                        lyrics_data,
+                    )
+                    return lyrics_data, self._build_cached_lyrics(lyrics_data)
+        except Exception as exc:
+            log_warning(
+                f"Failed to load LRCLIB fallback lyrics for '{track_name}' by '{artist_name}'.",
+                exc,
+            )
+
+        cached_synced_lyrics = self.synced_lyrics_for_key(storage_key)
+        if cached_synced_lyrics:
+            lyrics_data = parse_lrc(cached_synced_lyrics)
+            if lyrics_data:
+                return lyrics_data, self._build_cached_lyrics(lyrics_data)
+        return [], []
 
     def _translation_inputs_to_key(self):
         track_name = safe_strip(self.translation_window.track_name_input.text())
@@ -1916,7 +2409,17 @@ class LyricsOverlay(QWidget):
             return
 
         if not raw_text:
-            self.manual_translation_inputs.pop(storage_key, None)
+            existing_entry = dict(self.manual_translation_inputs.get(storage_key) or {})
+            cached_synced_lyrics = safe_strip(existing_entry.get("synced_lyrics"))
+            if cached_synced_lyrics:
+                self.manual_translation_inputs[storage_key] = {
+                    "track_name": track_name,
+                    "artist_name": artist_name,
+                    "content": "",
+                    "synced_lyrics": cached_synced_lyrics,
+                }
+            else:
+                self.manual_translation_inputs.pop(storage_key, None)
             save_manual_translation_inputs(self.manual_translation_inputs)
             if storage_key == self.current_track_key:
                 self.cached_lyrics = self._build_cached_lyrics(self.base_lyrics)
@@ -1931,10 +2434,12 @@ class LyricsOverlay(QWidget):
             self.translation_window.set_status(self.tr("translation_format_invalid"), error=True)
             return
 
+        existing_entry = dict(self.manual_translation_inputs.get(storage_key) or {})
         self.manual_translation_inputs[storage_key] = {
             "track_name": track_name,
             "artist_name": artist_name,
             "content": raw_text,
+            "synced_lyrics": safe_strip(existing_entry.get("synced_lyrics")),
         }
         save_manual_translation_inputs(self.manual_translation_inputs)
 
@@ -1955,7 +2460,17 @@ class LyricsOverlay(QWidget):
             self.translation_window.set_status(self.tr("translation_enter_song_name"), error=True)
             return
 
-        self.manual_translation_inputs.pop(storage_key, None)
+        existing_entry = dict(self.manual_translation_inputs.get(storage_key) or {})
+        cached_synced_lyrics = safe_strip(existing_entry.get("synced_lyrics"))
+        if cached_synced_lyrics:
+            self.manual_translation_inputs[storage_key] = {
+                "track_name": track_name,
+                "artist_name": artist_name,
+                "content": "",
+                "synced_lyrics": cached_synced_lyrics,
+            }
+        else:
+            self.manual_translation_inputs.pop(storage_key, None)
         save_manual_translation_inputs(self.manual_translation_inputs)
         self.translation_window.editor.clear()
         if storage_key == self.current_track_key:
@@ -2122,10 +2637,12 @@ class LyricsOverlay(QWidget):
             self.settings_window.close()
         if hasattr(self, "translation_window"):
             self.translation_window.close()
+        stop_netease_api_if_needed()
         super().closeEvent(event)
 
 
 def main():
+    start_netease_api_if_needed()
     app = QApplication(sys.argv)
     _configure_macos_app()
     app.setQuitOnLastWindowClosed(True)

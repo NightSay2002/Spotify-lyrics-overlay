@@ -9,6 +9,12 @@ BUILD_DIR="$ROOT_DIR/build"
 ICON_PNG="$ROOT_DIR/img/icon.png"
 ICONSET_DIR="$BUILD_DIR/app.iconset"
 ICON_ICNS="$BUILD_DIR/app.icns"
+API_SOURCE_DIR="$ROOT_DIR/api-enhanced"
+API_STAGING_DIR="$BUILD_DIR/api-enhanced"
+API_ARCHIVE="$BUILD_DIR/api-enhanced.tar.gz"
+NODE_BIN="$(command -v node || true)"
+NODE_RUNTIME="$BUILD_DIR/node-runtime"
+SPEC_FILE="$BUILD_DIR/$APP_NAME.spec"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "Missing venv python at $PYTHON_BIN" >&2
@@ -19,6 +25,24 @@ fi
 
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$BUILD_DIR"
+
+if [[ -d "$API_SOURCE_DIR" ]]; then
+  rsync -a \
+    --exclude '.git' \
+    --exclude '.github' \
+    --exclude 'test' \
+    --exclude '.husky' \
+    --exclude '.DS_Store' \
+    --exclude '._*' \
+    "$API_SOURCE_DIR/" "$API_STAGING_DIR/"
+  find "$API_STAGING_DIR" -name '._*' -delete
+  COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar -czf "$API_ARCHIVE" -C "$BUILD_DIR" api-enhanced
+fi
+
+if [[ -n "$NODE_BIN" && -x "$NODE_BIN" ]]; then
+  cp "$NODE_BIN" "$NODE_RUNTIME"
+  chmod 755 "$NODE_RUNTIME"
+fi
 
 if [[ -f "$ICON_PNG" ]]; then
   mkdir -p "$ICONSET_DIR"
@@ -48,11 +72,84 @@ if [[ -f "$ICON_ICNS" ]]; then
   PYINSTALLER_ARGS+=(--icon "$ICON_ICNS")
 fi
 
-if [[ -f "$ROOT_DIR/manual_translations.json" ]]; then
-  PYINSTALLER_ARGS+=(--add-data "$ROOT_DIR/manual_translations.json:.")
-fi
+ROOT_DIR="$ROOT_DIR" BUILD_DIR="$BUILD_DIR" SPEC_FILE="$SPEC_FILE" ICON_ICNS="$ICON_ICNS" APP_NAME="$APP_NAME" \
+API_ARCHIVE="$API_ARCHIVE" NODE_RUNTIME="$NODE_RUNTIME" "$PYTHON_BIN" - <<'PY'
+import os
+from pathlib import Path
 
-"$PYTHON_BIN" -m PyInstaller "${PYINSTALLER_ARGS[@]}" "$ROOT_DIR/mac.py"
+root_dir = Path(os.environ["ROOT_DIR"])
+build_dir = Path(os.environ["BUILD_DIR"])
+spec_file = Path(os.environ["SPEC_FILE"])
+icon_icns = Path(os.environ["ICON_ICNS"])
+app_name = os.environ["APP_NAME"]
+api_archive = Path(os.environ["API_ARCHIVE"])
+node_runtime = Path(os.environ["NODE_RUNTIME"])
+
+datas = []
+manual_translations = root_dir / "manual_translations.json"
+if manual_translations.is_file():
+    datas.append((str(manual_translations), "."))
+if api_archive.is_file():
+    datas.append((str(api_archive), "."))
+if node_runtime.is_file():
+    datas.append((str(node_runtime), "."))
+
+spec_text = f"""# -*- mode: python ; coding: utf-8 -*-
+
+
+a = Analysis(
+    ['{root_dir / "mac.py"}'],
+    pathex=[],
+    binaries=[],
+    datas={datas!r},
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={{}},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='{app_name}',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=['{icon_icns}'],
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='{app_name}',
+)
+app = BUNDLE(
+    coll,
+    name='{app_name}.app',
+    icon='{icon_icns}',
+    bundle_identifier='com.wingfungwong.spotifyfloatingoverlay',
+)
+"""
+spec_file.write_text(spec_text, encoding="utf-8")
+PY
+
+"$PYTHON_BIN" -m PyInstaller "$SPEC_FILE"
 
 echo "Built app bundle:"
 echo "$DIST_DIR/$APP_NAME.app"
