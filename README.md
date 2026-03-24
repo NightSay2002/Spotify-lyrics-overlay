@@ -71,17 +71,6 @@ http://127.0.0.1:8888/callback
 
 ![Get Your Key](img/3.get%20your%20key.png)
 
-本機設定會儲存在：
-
-- macOS: `~/Library/Application Support/Spotify Floating Overlay/`
-- Windows: `%APPDATA%/Spotify Floating Overlay/`
-
-包含：
-
-- `app_settings.json`
-- `manual_translations.json`
-- `.spotify_token_cache`
-
 ### 手動翻譯字幕
 
 打開 `翻譯` 視窗後，使用以下格式輸入：
@@ -186,17 +175,6 @@ How to get your Spotify key:
 3. Copy `Client ID` and `Client Secret`
 
 ![Get Your Key](img/3.get%20your%20key.png)
-
-Local app data is stored in:
-
-- macOS: `~/Library/Application Support/Spotify Floating Overlay/`
-- Windows: `%APPDATA%/Spotify Floating Overlay/`
-
-Files include:
-
-- `app_settings.json`
-- `manual_translations.json`
-- `.spotify_token_cache`
 
 ### Manual Translation Subtitles
 

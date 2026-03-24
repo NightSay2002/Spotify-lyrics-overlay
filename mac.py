@@ -5,6 +5,7 @@ import platform
 import re
 import sys
 import time
+import traceback
 import unicodedata
 from difflib import SequenceMatcher
 from urllib.parse import urljoin
@@ -124,7 +125,7 @@ UI_STRINGS = {
         "spotify_key_error_message": "請到設定填入 Spotify Client ID / Secret / Redirect URI",
         "spotify_error_title": "Spotify Error",
         "spotify_error_message": "錯誤：{error}",
-        "no_synced_lyrics_found": "No synced lyrics found.",
+        "no_synced_lyrics_found": "♫純音樂♫",
     },
     "en": {
         "settings_window_title": "Subtitle Settings",
@@ -187,7 +188,7 @@ UI_STRINGS = {
         "spotify_key_error_message": "Open Settings and fill Spotify Client ID / Secret / Redirect URI",
         "spotify_error_title": "Spotify Error",
         "spotify_error_message": "Error: {error}",
-        "no_synced_lyrics_found": "No synced lyrics found.",
+        "no_synced_lyrics_found": "♫Instrumental♫",
     },
 }
 
@@ -495,6 +496,21 @@ def normalize_text(text):
     return normalized
 
 
+def safe_strip(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def log_warning(message, exc=None):
+    print(f"[Spotify Floating Overlay] {message}", file=sys.stderr)
+    if exc is not None:
+        print(f"[Spotify Floating Overlay] {type(exc).__name__}: {exc}", file=sys.stderr)
+        traceback.print_exc()
+
+
 def similarity_score(left, right):
     if not left or not right:
         return 0.0
@@ -642,7 +658,7 @@ def align_translations_to_lyrics(lyrics_data, translation_pairs):
     window_size = 20
 
     for lyric in aligned_lyrics:
-        lyric_text = lyric.get("text", "").strip()
+        lyric_text = safe_strip(lyric.get("text"))
         normalized_lyric = normalize_text(lyric_text)
         if not normalized_lyric:
             continue
@@ -676,7 +692,7 @@ def align_translations_to_lyrics(lyrics_data, translation_pairs):
 
 
 def parse_manual_translation_block(raw_text, track_label=""):
-    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    lines = [safe_strip(line) for line in raw_text.splitlines() if safe_strip(line)]
     if len(lines) < 2:
         return []
 
@@ -775,7 +791,7 @@ def build_translation_key(track_name, artist_name):
 
 def detect_chinese_song(lyrics_data):
     sample_text = "".join(
-        lyric.get("text", "") for lyric in lyrics_data if lyric.get("text", "").strip()
+        safe_strip(lyric.get("text")) for lyric in lyrics_data if safe_strip(lyric.get("text"))
     )[:500]
     if not sample_text:
         return False
@@ -1510,14 +1526,14 @@ class LyricsOverlay(QWidget):
 
     def control_anchor_widget(self):
         candidates = (
-            (self.song_label, self.song_label.text().strip()),
-            (self.current_lyric_label, self.current_main_text.strip()),
+            (self.song_label, safe_strip(self.song_label.text())),
+            (self.current_lyric_label, safe_strip(self.current_main_text)),
             (
                 self.current_translation_label,
-                (self.current_translation_label.property("plain_text") or "").strip(),
+                safe_strip(self.current_translation_label.property("plain_text")),
             ),
-            (self.subtitle_label, self.subtitle_label.text().strip()),
-            (self.subtitle_translation_label, self.subtitle_translation_label.text().strip()),
+            (self.subtitle_label, safe_strip(self.subtitle_label.text())),
+            (self.subtitle_translation_label, safe_strip(self.subtitle_translation_label.text())),
         )
         for widget, content in candidates:
             if widget.isVisible() and content:
@@ -1860,9 +1876,21 @@ class LyricsOverlay(QWidget):
         translation_pairs = self._manual_translation_pairs_for_current()
         return align_translations_to_lyrics(lyrics_data, translation_pairs)
 
+    def _load_track_lyrics(self, track_name, artist_name, duration_ms):
+        try:
+            synced_text = get_best_synced_lyrics(track_name, artist_name, duration_ms)
+            lyrics_data = parse_lrc(synced_text)
+            return lyrics_data, self._build_cached_lyrics(lyrics_data)
+        except Exception as exc:
+            log_warning(
+                f"Failed to load lyrics for '{track_name}' by '{artist_name}'. Falling back to instrumental.",
+                exc,
+            )
+            return [], []
+
     def _translation_inputs_to_key(self):
-        track_name = self.translation_window.track_name_input.text().strip()
-        artist_name = self.translation_window.artist_name_input.text().strip()
+        track_name = safe_strip(self.translation_window.track_name_input.text())
+        artist_name = safe_strip(self.translation_window.artist_name_input.text())
         if not track_name:
             return "", "", ""
         return build_translation_key(track_name, artist_name), track_name, artist_name
@@ -1882,7 +1910,7 @@ class LyricsOverlay(QWidget):
 
     def apply_manual_translations(self):
         storage_key, track_name, artist_name = self._translation_inputs_to_key()
-        raw_text = self.translation_window.editor.toPlainText().strip()
+        raw_text = safe_strip(self.translation_window.editor.toPlainText())
         if not storage_key:
             self.translation_window.set_status(self.tr("translation_enter_song_name"), error=True)
             return
@@ -1944,12 +1972,18 @@ class LyricsOverlay(QWidget):
         next_translation,
         current_progress=0.0,
     ):
-        self.song_label.setText(title)
-        self.last_track_name = title
-        self.current_main_text = current_line
-        self.current_translation_label.setProperty("plain_text", current_translation or "")
-        self.subtitle_label.setText(next_line or "")
-        self.subtitle_translation_label.setText(next_translation or "")
+        safe_title = safe_strip(title)
+        safe_current_line = "" if current_line is None else str(current_line)
+        safe_current_translation = "" if current_translation is None else str(current_translation)
+        safe_next_line = "" if next_line is None else str(next_line)
+        safe_next_translation = "" if next_translation is None else str(next_translation)
+
+        self.song_label.setText(safe_title)
+        self.last_track_name = safe_title
+        self.current_main_text = safe_current_line
+        self.current_translation_label.setProperty("plain_text", safe_current_translation)
+        self.subtitle_label.setText(safe_next_line)
+        self.subtitle_translation_label.setText(safe_next_translation)
         self._apply_main_lyric_color(current_progress)
 
     def animate_current_line(self):
@@ -2019,9 +2053,17 @@ class LyricsOverlay(QWidget):
                 )
                 return
 
-            track_id = item["id"]
-            track_name = item["name"]
-            artist_name = ", ".join(artist["name"] for artist in item["artists"])
+            track_name = safe_strip(item.get("name"))
+            artists = item.get("artists") or []
+            artist_names = [
+                safe_strip(artist.get("name"))
+                for artist in artists
+                if isinstance(artist, dict) and safe_strip(artist.get("name"))
+            ]
+            artist_name = ", ".join(artist_names)
+            track_id = item.get("id") or build_translation_key(track_name, artist_name)
+            if not track_name:
+                track_name = self.tr("spotify_unable_title")
             self.is_playing = True
             self.last_progress_ms = track_info.get("progress_ms", 0)
             self.last_progress_timestamp = time.monotonic()
@@ -2030,10 +2072,11 @@ class LyricsOverlay(QWidget):
             self.current_track_key = self._build_track_key(track_id, track_name, artist_name)
 
             if track_id != self.current_track_id:
-                self.base_lyrics = parse_lrc(
-                    get_best_synced_lyrics(track_name, artist_name, item.get("duration_ms", 0))
+                self.base_lyrics, self.cached_lyrics = self._load_track_lyrics(
+                    track_name,
+                    artist_name,
+                    item.get("duration_ms", 0),
                 )
-                self.cached_lyrics = self._build_cached_lyrics(self.base_lyrics)
                 self.current_track_id = track_id
 
             current_line, current_translation, next_line, next_translation, current_progress = self._find_active_lines(
@@ -2062,6 +2105,7 @@ class LyricsOverlay(QWidget):
                 0.0,
             )
         except Exception as exc:
+            log_warning("Unexpected error while refreshing Spotify playback.", exc)
             self._set_labels(
                 self.tr("spotify_error_title"),
                 self.tr("spotify_error_message", error=exc),
