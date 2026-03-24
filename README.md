@@ -14,28 +14,6 @@ Spotify 的透明浮動歌詞視窗，使用 Python 與 PySide6 製作。
 - 可手動輸入翻譯字幕並儲存成 JSON
 - 浮動小按鈕可切換移動、設定、翻譯與關閉
 
-### GitHub 要上傳哪些檔案
-
-建議保留：
-
-- `a.py`
-- `requirements.txt`
-- `README.md`
-- `.gitignore`
-
-可選：
-
-- `build_mac_app.sh`
-
-不要上傳：
-
-- `venv/`
-- `build/`
-- `dist/`
-- `__pycache__/`
-- `.DS_Store`
-- `Spotify Floating Overlay.spec`
-- 你自己的本機翻譯資料
 
 ### 環境需求
 
@@ -65,7 +43,7 @@ python a.py
 - `Client Secret`
 - `Redirect URI`
 
-這些資料只會存在你的本機，不會存在 repo。
+這些資料只會存在你的本機。
 
 ### Spotify 設定
 
@@ -137,29 +115,6 @@ Features:
 - manual translation subtitles saved as JSON
 - floating buttons for move, settings, translation, and quit
 
-### What To Upload To GitHub
-
-Recommended files:
-
-- `a.py`
-- `requirements.txt`
-- `README.md`
-- `.gitignore`
-
-Optional:
-
-- `build_mac_app.sh`
-
-Do not upload:
-
-- `venv/`
-- `build/`
-- `dist/`
-- `__pycache__/`
-- `.DS_Store`
-- `Spotify Floating Overlay.spec`
-- your local translation data
-
 ### Requirements
 
 - Python 3.11+ recommended
@@ -188,7 +143,7 @@ On first launch, open the floating `設定` window and fill in:
 - `Client Secret`
 - `Redirect URI`
 
-These values are stored locally on your machine, not in the repo.
+These values are stored locally on your machine.
 
 ### Spotify Setup
 
