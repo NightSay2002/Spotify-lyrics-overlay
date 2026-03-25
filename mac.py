@@ -708,6 +708,10 @@ def log_warning(message, exc=None):
         traceback.print_exc()
 
 
+def log_debug(message):
+    print(f"[Spotify Floating Overlay][DEBUG] {message}", file=sys.stderr)
+
+
 def similarity_score(left, right):
     if not left or not right:
         return 0.0
@@ -2145,10 +2149,14 @@ class LyricsOverlay(QWidget):
         current_progress = 0.0
 
         for index, lyric in enumerate(self.cached_lyrics):
-            if progress_ms >= lyric["time"]:
+            start_time = max(lyric["time"] + self.current_track_lyric_offset_ms, 0)
+            if progress_ms >= start_time:
                 current_line = lyric["text"] or "..."
-                start_time = lyric["time"]
-                end_time = self.cached_lyrics[index + 1]["time"] if index + 1 < len(self.cached_lyrics) else start_time + 4000
+                end_time = (
+                    max(self.cached_lyrics[index + 1]["time"] + self.current_track_lyric_offset_ms, 0)
+                    if index + 1 < len(self.cached_lyrics)
+                    else start_time + 4000
+                )
                 duration = max(end_time - start_time, 1)
                 current_progress = min(max((progress_ms - start_time) / duration, 0.0), 1.0)
                 translation_start = start_time + safe_int(lyric.get("translation_offset_ms"), 0)
@@ -2158,7 +2166,10 @@ class LyricsOverlay(QWidget):
                     current_translation = ""
                 if index + 1 < len(self.cached_lyrics):
                     next_line = self.cached_lyrics[index + 1]["text"] or ""
-                    next_translation_start = self.cached_lyrics[index + 1]["time"] + safe_int(
+                    next_line_start = max(
+                        self.cached_lyrics[index + 1]["time"] + self.current_track_lyric_offset_ms, 0
+                    )
+                    next_translation_start = next_line_start + safe_int(
                         self.cached_lyrics[index + 1].get("translation_offset_ms"), 0
                     )
                     if progress_ms >= next_translation_start:
@@ -2168,7 +2179,7 @@ class LyricsOverlay(QWidget):
             else:
                 if current_line == "...":
                     next_line = lyric.get("text", "")
-                    translation_start = lyric["time"] + safe_int(lyric.get("translation_offset_ms"), 0)
+                    translation_start = start_time + safe_int(lyric.get("translation_offset_ms"), 0)
                     if progress_ms >= translation_start:
                         next_translation = lyric.get("translation", "")
                     else:
@@ -2179,10 +2190,57 @@ class LyricsOverlay(QWidget):
 
     def _estimated_progress_ms(self):
         if not self.is_playing:
-            return max(self.last_progress_ms - self.current_track_lyric_offset_ms, 0)
+            return max(self.last_progress_ms, 0)
 
         elapsed_ms = int((time.monotonic() - self.last_progress_timestamp) * 1000)
-        return max(self.last_progress_ms + elapsed_ms - self.current_track_lyric_offset_ms, 0)
+        return max(self.last_progress_ms + elapsed_ms, 0)
+
+    def _log_terminal_debug(self, progress_ms, current_line, next_line):
+        if not self.current_track_name:
+            return
+
+        offset_ms = self.current_track_lyric_offset_ms
+        active_index = None
+        current_start = None
+        next_start = None
+
+        for index, lyric in enumerate(self.cached_lyrics):
+            lyric_start = max(lyric["time"] + offset_ms, 0)
+            if progress_ms >= lyric_start:
+                active_index = index
+                current_start = lyric_start
+                if index + 1 < len(self.cached_lyrics):
+                    next_start = max(self.cached_lyrics[index + 1]["time"] + offset_ms, 0)
+            else:
+                if current_start is None:
+                    next_start = lyric_start
+                break
+
+        current_base = self.cached_lyrics[active_index]["time"] if active_index is not None else None
+        next_base = (
+            self.cached_lyrics[active_index + 1]["time"]
+            if active_index is not None and active_index + 1 < len(self.cached_lyrics)
+            else None
+        )
+        log_debug(
+            'track="{track}" artist="{artist}" spotify_ms={spotify_ms} est_ms={est_ms} '
+            'global_offset_ms={offset_ms} current_idx={current_idx} current_base_ms={current_base} '
+            'current_effective_ms={current_effective} next_base_ms={next_base} '
+            'next_effective_ms={next_effective} current_line="{current_line}" next_line="{next_line}"'.format(
+                track=self.current_track_name,
+                artist=self.current_track_artist,
+                spotify_ms=self.last_progress_ms,
+                est_ms=progress_ms,
+                offset_ms=offset_ms,
+                current_idx=active_index,
+                current_base=current_base,
+                current_effective=current_start,
+                next_base=next_base,
+                next_effective=next_start,
+                current_line=safe_strip(current_line),
+                next_line=safe_strip(next_line),
+            )
+        )
 
     def _ensure_on_top(self, force_front=False):
         _configure_macos_panel(self, accepts_input=self.drag_enabled, force_front=force_front)
@@ -3032,8 +3090,9 @@ class LyricsOverlay(QWidget):
                 if self.translation_window.isVisible():
                     self.translation_window.sync_from_overlay()
 
+            estimated_progress = self._estimated_progress_ms()
             current_line, current_translation, next_line, next_translation, current_progress = self._find_active_lines(
-                self._estimated_progress_ms()
+                estimated_progress
             )
             self._set_labels(
                 f"{track_name} - {artist_name}",
@@ -3043,6 +3102,7 @@ class LyricsOverlay(QWidget):
                 next_translation,
                 current_progress,
             )
+            self._log_terminal_debug(estimated_progress, current_line, next_line)
         except SpotifyOauthError as exc:
             self.spotify = None
             self.current_track_id = None
