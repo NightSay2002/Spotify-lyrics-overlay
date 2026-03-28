@@ -712,6 +712,45 @@ def log_debug(message):
     print(f"[Spotify Floating Overlay][DEBUG] {message}", file=sys.stderr)
 
 
+def merge_saved_text_style(saved_text_style):
+    default_text_style = {
+        "text_color": "#FFFFFF",
+        "accent_color": "#60A5FA",
+        "button_color": "#0F172A",
+        "main_size": 30,
+        "main_translation_size": 15,
+        "subtitle_size": 20,
+        "subtitle_translation_size": 10,
+        "gap_song": 0,
+        "gap_primary": 2,
+        "gap_middle": 4,
+        "gap_subtitle": 2,
+        "show_song": True,
+        "show_main": True,
+        "show_subtitle": True,
+        "show_translation": True,
+    }
+    if not isinstance(saved_text_style, dict):
+        return default_text_style
+
+    merged = dict(default_text_style)
+    color_keys = {"text_color", "accent_color", "button_color"}
+    bool_keys = {"show_song", "show_main", "show_subtitle", "show_translation"}
+
+    for key, default_value in default_text_style.items():
+        value = saved_text_style.get(key, default_value)
+        if key in color_keys:
+            normalized = safe_strip(value).upper()
+            if re.fullmatch(r"#[0-9A-F]{6}", normalized):
+                merged[key] = normalized
+        elif key in bool_keys:
+            merged[key] = bool(value)
+        else:
+            merged[key] = safe_int(value, default_value)
+
+    return merged
+
+
 def similarity_score(left, right):
     if not left or not right:
         return 0.0
@@ -1968,23 +2007,7 @@ class LyricsOverlay(QWidget):
         self.last_progress_ms = 0
         self.last_progress_timestamp = time.monotonic()
         self.current_track_lyric_offset_ms = 0
-        self.text_style = {
-            "text_color": "#FFFFFF",
-            "accent_color": "#60A5FA",
-            "button_color": "#0F172A",
-            "main_size": 30,
-            "main_translation_size": 15,
-            "subtitle_size": 20,
-            "subtitle_translation_size": 10,
-            "gap_song": 0,
-            "gap_primary": 2,
-            "gap_middle": 4,
-            "gap_subtitle": 2,
-            "show_song": True,
-            "show_main": True,
-            "show_subtitle": True,
-            "show_translation": True,
-        }
+        self.text_style = merge_saved_text_style(self.app_settings.get("text_style"))
         self.current_line_progress = 0.0
 
         self.setWindowTitle("Spotify Floating Overlay")
@@ -2460,6 +2483,7 @@ class LyricsOverlay(QWidget):
         self.text_style["button_color"] = selected_color.name().upper()
         self.control_window.apply_button_style(self.text_style["button_color"])
         self.settings_window.set_button_color_preview(self.text_style["button_color"])
+        self._save_text_style_settings()
 
     def update_text_style(self):
         if hasattr(self, "settings_window"):
@@ -2500,6 +2524,11 @@ class LyricsOverlay(QWidget):
         if hasattr(self, "control_window"):
             self.control_window.apply_button_style(self.text_style["button_color"])
         self._apply_main_lyric_color(self.current_line_progress)
+        self._save_text_style_settings()
+
+    def _save_text_style_settings(self):
+        self.app_settings["text_style"] = dict(self.text_style)
+        save_app_settings(self.app_settings)
 
     def _apply_line_visibility(self):
         show_song = self.text_style["show_song"]

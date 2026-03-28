@@ -4,9 +4,11 @@ import platform
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from urllib.parse import urlparse
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -207,7 +209,6 @@ mac.LyricsOverlay._ensure_on_top = _ensure_on_top_windows
 
 def main():
     _set_windows_app_id()
-    start_netease_api_if_needed_windows()
     app = QApplication(sys.argv)
     font_family = load_application_font()
     if font_family:
@@ -219,6 +220,14 @@ def main():
     apply_app_icon(app, overlay)
     overlay.show()
     overlay._ensure_on_top(force_front=True)
+    QTimer.singleShot(
+        0,
+        lambda: threading.Thread(
+            target=start_netease_api_if_needed_windows,
+            name="netease-api-start",
+            daemon=True,
+        ).start(),
+    )
 
     return app.exec()
 
